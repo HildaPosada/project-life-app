@@ -30,6 +30,10 @@ MONGO_URL = os.environ["MONGO_URL"]
 DB_NAME = os.environ["DB_NAME"]
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 SUPABASE_JWT_SECRET = os.environ.get("SUPABASE_JWT_SECRET", "")
+# Dev-only: allows POST /api/entitlement/mock to toggle premium without a
+# real purchase. Must be "1" / "true" (case insensitive). In production this
+# should be unset so no user can self-unlock.
+ALLOW_MOCK_ENTITLEMENT = os.environ.get("ALLOW_MOCK_ENTITLEMENT", "1").lower() in ("1", "true", "yes")
 
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
@@ -99,7 +103,7 @@ class Entitlement(BaseModel):
 
 class MockEntitlementRequest(BaseModel):
     premium: bool
-    product: Optional[str] = None  # "pl_premium_monthly" | "pl_premium_annual"
+    product: Optional[Literal["pl_premium_monthly", "pl_premium_annual"]] = None
 
 
 class JournalEntry(BaseModel):
@@ -398,7 +402,13 @@ async def get_entitlement(user: User = Depends(get_current_user)):
 async def mock_entitlement(body: MockEntitlementRequest, user: User = Depends(get_current_user)):
     """Dev-only entitlement toggle. Used to build & QA the paywall UI and
     gating logic before RevenueCat / Stripe are wired end-to-end. Will be
-    replaced by webhook-driven sync in Sprint 2b."""
+    replaced by webhook-driven sync in Sprint 2b.
+
+    Gated by ALLOW_MOCK_ENTITLEMENT env var so a self-unlock isn't possible
+    in production. Set ALLOW_MOCK_ENTITLEMENT=0 to disable.
+    """
+    if not ALLOW_MOCK_ENTITLEMENT:
+        raise HTTPException(status_code=404, detail="Not found")
     if body.premium:
         patch = {
             "entitlement": "premium",

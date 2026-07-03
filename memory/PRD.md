@@ -78,3 +78,22 @@ All 4 phases scaffolded with lock/unlock progression:
 - File upload of PDFs / voice memos (references and notes only; base64 storage stub in schema).
 - Push notifications.
 - Therapist-side portal.
+
+## Sprint 2a — Subscriptions (Paywall UI + Entitlement Gating)
+- **Bundle identifiers**: `com.hyperintelligence.projectlife` (iOS `bundleIdentifier` + Android `package`). App display name updated to "Project Life".
+- **Entitlement model** (single "premium" tier, no tiers, per user direction):
+  - `User.entitlement`: `"free" | "premium"` (default `free`)
+  - `User.entitlement_source`: `"mock" | "revenuecat" | "stripe" | "promo"`
+  - `User.entitlement_product`: `"pl_premium_monthly" | "pl_premium_annual"`
+  - `User.entitlement_expires_at`, `User.trial_ends_at`: datetimes
+- **Free unlocks**: Today, Sanctuary, Memory Path, unlimited journaling, weekly reflections, Safety Net, Find-a-therapist, first healing chapter (Phase 1).
+- **Premium unlocks**: full Healing Journey (chapters 2+), Practices Library, AI Companion (future), advanced insights, future therapist/group integrations, all future premium content.
+- **Pricing**: Monthly $19.99 · Annual $149.99 (37% savings) · 14-day free trial.
+- **Backend endpoints**: `GET /api/entitlement`, `POST /api/entitlement/mock` (dev-only, gated by `ALLOW_MOCK_ENTITLEMENT` env flag). Real RevenueCat + Stripe webhook sync deferred to Sprint 2b.
+- **Frontend**: `EntitlementContext` provider, `<PremiumGate>` component, `/paywall.tsx` Sanctuary-styled screen. Gating wired into Journey (chapters ahead), Phase detail (2+), Library (Practices Library), Menu (Membership row).
+- **Verification**: 38/38 backend tests passing (18 new entitlement + 20 auth regression).
+
+## Sprint 2b — Not shipped yet
+- RevenueCat SDK integration (iOS + Android IAP) — awaiting user's RC API keys.
+- Stripe web checkout + webhook-driven entitlement sync.
+- Server-to-server RevenueCat webhook for subscription lifecycle events.
