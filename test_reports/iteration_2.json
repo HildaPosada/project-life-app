@@ -1,0 +1,44 @@
+{
+  "summary": "Iteration 2 (backend-only, per request). Re-ran full pytest regression after the AuthContext.tsx OAuth session-id parsing fix and added targeted tests for (a) the auth-fix regression scenarios and (b) two new endpoints. Total 34/34 tests PASSED (24 original + 10 new). Regression: POST /api/auth/session with 'abc?' (trailing question mark) -> 401, valid-shape but non-existent session_id -> 401, empty session_id -> 401. Auth guard on /auth/me (no bearer -> 401, invalid bearer -> 401, valid bearer -> 200), logout invalidates the token (subsequent /auth/me -> 401) — all still working. New GET /api/dashboard verified: returns sessions_this_week, sessions_completed, sessions_target, journey_progress_pct (0-100), and weekly=5-bucket array with integer count >= 0 per bucket; requires auth (401 without); no _id leaked; reflects activity created earlier in the same suite (sessions_completed > 0). New POST /api/onboarding/starting-phase verified: phase=2 -> 200 + current_phase persisted to 2 (confirmed via GET /auth/me); phase=0 and phase=4 both -> 400; requires auth (401 without). Recursive _id-exclusion re-verified on every response. Google OAuth is MOCKED via direct MongoDB session seeding (conftest.py qa_user fixture) — noted in mocked_apis_list. No frontend automation performed (correctly out of scope — real Google OAuth cannot be automated in CI).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/auth/session (session_id='')", "issue": "Currently returns 401 (upstream rejects); Pydantic could enforce min_length=1 to return 422 explicitly. Not blocking — 401 is acceptable."},
+      {"endpoint": "POST /api/auth/logout", "issue": "Carried over from iteration 1: does not require Authorization header — unauth call returns 200. Idempotent and safe but contract is loose."},
+      {"endpoint": "GET /api/safety/checkin/today", "issue": "Carried over from iteration 1: 'today' window uses UTC midnight; may be off-by-one for non-UTC users."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/conftest.py",
+    "/app/backend/tests/test_project_life_backend.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Frontend AuthContext.tsx OAuth fix cannot be verified end-to-end from the container (real Google browser flow required). Recommend main agent do a manual smoke test on device/web: navigate to Google login, complete OAuth, confirm redirect completes and user lands on the authenticated Home screen (dashboard) without being kicked back to /login.",
+    "(Optional) Add Pydantic Field(min_length=1) to SessionRequest.session_id so an empty/whitespace session_id is rejected as 422 by FastAPI before hitting the upstream Emergent OAuth endpoint (currently it just makes a wasted upstream call).",
+    "(Optional, carried) Require bearer on POST /api/auth/logout for a stricter contract.",
+    "(Optional, carried) Consider client-tz offset for /api/safety/checkin/today."
+  ],
+  "critical_code_review_comments": [
+    "AuthContext.tsx: parseSessionId now correctly uses URL()+URLSearchParams over both hash and search — good. processingRef guard prevents double-processing; authError state surfaces failure to the user — matches the PR description.",
+    "server.py POST /api/onboarding/starting-phase correctly validates phase in (1,2,3) and rejects 0 and 4 with 400; response Model=User excludes _id (find_one uses {_id:0}). Good.",
+    "GET /api/dashboard: five 7-day buckets end at now_utc() and step back; buckets are integer counts and clean of _id. journey_progress_pct capped at 100 correctly. Note: since target=20 is hardcoded, expose it via a config later.",
+    "server.py is now ~800 lines; still readable but the auth+profile+phases split into routers would help maintainability once more endpoints land.",
+    "No new deprecated Expo packages introduced by this iteration (only AuthContext.tsx changed on the frontend — not in scope for backend testing)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_project_life_backend.py (appended TestAuthSessionRegression, TestDashboard, TestStartingPhase — 10 new tests)"
+  ],
+  "success_rate": {"backend": "100% (34/34)", "frontend": "not_tested_by_design"},
+  "seed_data_creation": "Reused conftest.py qa_user fixture from iteration 1 — seeds user_qatest + session token 'qa-token-xyz' (7-day expiry) directly in MongoDB. Idempotent cleanup on session teardown.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend is fully green (34/34). Auth fix regression covered from the server side (bad session_ids -> 401). The actual browser-side parseSessionId fix in AuthContext.tsx MUST be validated manually with a real Google OAuth flow — it cannot be exercised from headless CI. Test file /app/backend/tests/test_project_life_backend.py is idempotent and reusable for future regressions. Two new endpoints added this iteration are covered: /api/dashboard and /api/onboarding/starting-phase.",
+  "rca_of_issue": "Original bug: parseSessionId() in AuthContext.tsx concatenated window.location.hash + window.location.search causing extracted session_id to contain trailing '?'. That malformed id was posted to /api/auth/session, upstream Emergent OAuth returned non-200, backend correctly returned 401, and the frontend threw the user back to /login. Fix rewrote parseSessionId to parse each location part with URL()+URLSearchParams (with regex fallback), added a processingRef guard, and surfaces authError to the UI. Backend behaviour is unchanged and confirmed correct: any malformed or non-existent session_id returns 401 (never 200, never 500)."
+}

@@ -1,65 +1,81 @@
 import { Platform } from "react-native";
 
+// ---------------------------------------------------------------------------
+// Sanctuary — Project Life v2 design language
+// Editorial, premium, timeless. Warm neutrals, forest greens, muted gold.
+// ---------------------------------------------------------------------------
 export const colors = {
-  surface: "#F9F8F5",
-  onSurface: "#3D3A36",
-  surfaceSecondary: "#F2EFE8",
-  onSurfaceSecondary: "#59544D",
-  surfaceTertiary: "#EAE5DC",
-  onSurfaceTertiary: "#6E685F",
-  surfaceInverse: "#2C2926",
-  onSurfaceInverse: "#F9F8F5",
-  brand: "#7C8D7C",
-  brandPrimary: "#7C8D7C",
-  onBrandPrimary: "#FFFFFF",
-  brandSecondary: "#B78775",
-  onBrandSecondary: "#FFFFFF",
-  brandTertiary: "#D2D6CB",
-  onBrandTertiary: "#454D45",
-  success: "#819A82",
-  onSuccess: "#FFFFFF",
-  warning: "#C49A6C",
-  onWarning: "#FFFFFF",
-  error: "#B77575",
-  onError: "#FFFFFF",
-  info: "#919A96",
-  onInfo: "#FFFFFF",
-  border: "#E2DCD1",
-  borderStrong: "#C8BEB0",
-  divider: "#E6E1D6",
+  // Backgrounds and surfaces
+  surface: "#F7F3ED",            // Warm Linen — app background
+  surfaceSecondary: "#EFEAE1",   // page cards
+  surfaceTertiary: "#E9E4DD",    // Stone — raised cards
+  onSurface: "#2E3130",          // Charcoal — primary text
+  onSurfaceSecondary: "#5A5C58", // secondary text
+  onSurfaceTertiary: "#8A8C87",  // captions, meta
+  surfaceInverse: "#2E3130",
+  onSurfaceInverse: "#F7F3ED",
+
+  // Brand
+  brand: "#355746",              // Forest — primary brand + CTA
+  brandPrimary: "#355746",
+  onBrandPrimary: "#F7F3ED",
+  brandSecondary: "#8EA68C",     // Sage — supportive
+  onBrandSecondary: "#F7F3ED",
+  brandTertiary: "#D9D2C4",      // soft stone
+  onBrandTertiary: "#2E3130",
+
+  // Accents
+  accent: "#B79A63",             // Muted Gold — used sparingly for moments
+  onAccent: "#2E3130",
+
+  // Semantic (kept warm & muted, never neon)
+  success: "#6E8D74",
+  onSuccess: "#F7F3ED",
+  warning: "#B79A63",
+  onWarning: "#2E3130",
+  error: "#9F5A5A",
+  onError: "#F7F3ED",
+  info: "#8EA68C",
+  onInfo: "#F7F3ED",
+
+  // Structural
+  border: "#DDD5C6",
+  borderStrong: "#C6BDA9",
+  divider: "#E5DECF",
 };
 
 export const spacing = {
   xs: 4,
   sm: 8,
   md: 12,
-  lg: 16,
-  xl: 24,
-  xxl: 32,
-  xxxl: 48,
+  lg: 20,
+  xl: 28,
+  xxl: 40,
+  xxxl: 56,
 };
 
 export const radius = {
-  sm: 6,
-  md: 12,
-  lg: 20,
+  sm: 4,
+  md: 10,
+  lg: 18,
   pill: 999,
 };
 
-// Font families — falling back to system serif/sans so we do not pull
-// @expo-google-fonts (forbidden per platform rules).
+// Editorial typography. `serif` = large headings / display moments.
+// `body` = readable sans for UI copy. No @expo-google-fonts (forbidden).
 export const fonts = {
   display: Platform.select({ ios: "Georgia", android: "serif", default: "serif" }) as string,
   displayBold: Platform.select({ ios: "Georgia-Bold", android: "serif", default: "serif" }) as string,
+  serif: Platform.select({ ios: "Georgia", android: "serif", default: "serif" }) as string,
   body: Platform.select({ ios: "System", android: "sans-serif", default: "System" }) as string,
 };
 
 export const fontSize = {
   xs: 11,
-  sm: 12,
-  base: 14,
-  lg: 16,
-  xl: 20,
-  xxl: 24,
-  xxxl: 32,
+  sm: 13,
+  base: 15,
+  lg: 17,
+  xl: 22,
+  xxl: 28,
+  xxxl: 40,
 };

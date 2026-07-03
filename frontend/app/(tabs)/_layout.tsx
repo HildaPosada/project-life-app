@@ -12,41 +12,41 @@ export default function TabsLayout() {
         tabBarInactiveTintColor: colors.onSurfaceTertiary,
         tabBarStyle: {
           backgroundColor: colors.surface,
-          borderTopColor: colors.border,
+          borderTopColor: colors.divider,
           borderTopWidth: 1,
-          height: 78,
-          paddingTop: 8,
-          paddingBottom: 20,
+          height: 84,
+          paddingTop: 10,
+          paddingBottom: 22,
         },
-        tabBarLabelStyle: { fontFamily: fonts.body, fontSize: 11 },
+        tabBarLabelStyle: { fontFamily: fonts.body, fontSize: 11, letterSpacing: 0.5, marginTop: 2 },
       }}
     >
       <Tabs.Screen
         name="home"
         options={{
-          title: "Home",
-          tabBarIcon: ({ color, size }) => <Feather name="home" size={size} color={color} />,
+          title: "Today",
+          tabBarIcon: ({ color, size }) => <Feather name="sun" size={size - 2} color={color} />,
         }}
       />
       <Tabs.Screen
         name="vault"
         options={{
-          title: "Vault",
-          tabBarIcon: ({ color, size }) => <Feather name="book" size={size} color={color} />,
+          title: "Journal",
+          tabBarIcon: ({ color, size }) => <Feather name="book-open" size={size - 2} color={color} />,
         }}
       />
       <Tabs.Screen
         name="journey"
         options={{
           title: "Journey",
-          tabBarIcon: ({ color, size }) => <Feather name="map" size={size} color={color} />,
+          tabBarIcon: ({ color, size }) => <Feather name="compass" size={size - 2} color={color} />,
         }}
       />
       <Tabs.Screen
         name="library"
         options={{
-          title: "Library",
-          tabBarIcon: ({ color, size }) => <Feather name="heart" size={size} color={color} />,
+          title: "Practices",
+          tabBarIcon: ({ color, size }) => <Feather name="feather" size={size - 2} color={color} />,
         }}
       />
     </Tabs>

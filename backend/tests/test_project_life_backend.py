@@ -321,6 +321,121 @@ class TestPhaseAdvanceFlow:
         assert all(c["contact_id"] != contact_id for c in r2.json())
 
 
+# -------------- Auth fix regression: bad session_id shapes -------------------
+class TestAuthSessionRegression:
+    """Regression for the OAuth fix in AuthContext.tsx.
+
+    parseSessionId() previously produced a session_id with a trailing '?'.
+    Backend must reject any such malformed / non-existent session_id with 401,
+    never 200 and never 500.
+    """
+
+    def test_session_id_with_trailing_question_mark_rejected(self, anon_client):
+        r = anon_client.post(
+            f"{API_URL}/auth/session",
+            json={"session_id": "abc?"},
+        )
+        assert r.status_code == 401, r.text
+
+    def test_session_id_valid_shape_but_nonexistent_rejected(self, anon_client):
+        r = anon_client.post(
+            f"{API_URL}/auth/session",
+            json={"session_id": "a" * 40},
+        )
+        assert r.status_code == 401, r.text
+
+    def test_session_id_empty_string_rejected(self, anon_client):
+        r = anon_client.post(
+            f"{API_URL}/auth/session",
+            json={"session_id": ""},
+        )
+        # Either 401 (rejected by upstream) or 422 (validation) is acceptable
+        assert r.status_code in (401, 422), r.text
+
+
+# ---------------------------- Dashboard --------------------------------------
+class TestDashboard:
+    def test_dashboard_requires_auth(self, anon_client):
+        r = anon_client.get(f"{API_URL}/dashboard")
+        assert r.status_code == 401
+
+    def test_dashboard_shape_and_values(self, auth_client):
+        r = auth_client.get(f"{API_URL}/dashboard")
+        assert r.status_code == 200, r.text
+        data = r.json()
+        # Required top-level keys
+        for k in ("sessions_this_week", "sessions_completed",
+                  "sessions_target", "journey_progress_pct", "weekly"):
+            assert k in data, f"missing key {k}"
+        # Type + non-negativity checks
+        assert isinstance(data["sessions_this_week"], int)
+        assert isinstance(data["sessions_completed"], int)
+        assert isinstance(data["sessions_target"], int)
+        assert isinstance(data["journey_progress_pct"], int)
+        assert data["sessions_this_week"] >= 0
+        assert data["sessions_completed"] >= 0
+        assert data["sessions_target"] > 0
+        assert 0 <= data["journey_progress_pct"] <= 100
+        # Weekly array = 5 buckets, each an int count >= 0
+        weekly = data["weekly"]
+        assert isinstance(weekly, list) and len(weekly) == 5
+        for bucket in weekly:
+            assert isinstance(bucket, dict)
+            assert "count" in bucket and isinstance(bucket["count"], int)
+            assert bucket["count"] >= 0
+            assert "week_start" in bucket and "week_end" in bucket
+        assert_no_mongo_id(data)
+
+    def test_dashboard_reflects_activity(self, auth_client):
+        """After the earlier tests created journal/checkin/session log entries,
+        sessions_completed should be > 0."""
+        r = auth_client.get(f"{API_URL}/dashboard")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["sessions_completed"] > 0, \
+            "dashboard shows 0 activity but journal/checkin/session-log created earlier"
+
+
+# ------------------- Onboarding starting-phase -------------------------------
+class TestStartingPhase:
+    def test_starting_phase_requires_auth(self, anon_client):
+        r = anon_client.post(
+            f"{API_URL}/onboarding/starting-phase",
+            json={"phase": 2},
+        )
+        assert r.status_code == 401
+
+    def test_starting_phase_rejects_zero(self, auth_client):
+        r = auth_client.post(
+            f"{API_URL}/onboarding/starting-phase",
+            json={"phase": 0},
+        )
+        assert r.status_code == 400, r.text
+
+    def test_starting_phase_rejects_four(self, auth_client):
+        r = auth_client.post(
+            f"{API_URL}/onboarding/starting-phase",
+            json={"phase": 4},
+        )
+        assert r.status_code == 400, r.text
+
+    def test_starting_phase_accepts_two_and_updates_user(self, auth_client):
+        r = auth_client.post(
+            f"{API_URL}/onboarding/starting-phase",
+            json={"phase": 2},
+        )
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert data["current_phase"] == 2
+        assert data["user_id"] == QA_USER_ID
+        assert_no_mongo_id(data)
+
+        # GET to verify persistence
+        r2 = auth_client.get(f"{API_URL}/auth/me")
+        assert r2.status_code == 200
+        assert r2.json()["current_phase"] == 2
+
+
 # ------------------------------- Logout --------------------------------------
 class TestLogout:
     def test_logout_invalidates_token(self, auth_client):

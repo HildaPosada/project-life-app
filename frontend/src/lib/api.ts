@@ -89,4 +89,8 @@ export const api = {
   listTimeline: () => request<any[]>("/timeline"),
   createTimeline: (body: Record<string, unknown>) =>
     request<any>("/timeline", { method: "POST", body }),
+
+  dashboard: () => request<any>("/dashboard"),
+  setStartingPhase: (phase: number) =>
+    request<any>("/onboarding/starting-phase", { method: "POST", body: { phase } }),
 };

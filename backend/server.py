@@ -9,7 +9,7 @@ import os
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import List, Optional, Literal
+from typing import List, Optional, Literal, Dict, Any
 
 import httpx
 from dotenv import load_dotenv
@@ -699,6 +699,68 @@ async def list_timeline(user: User = Depends(get_current_user)):
     docs = await db.timeline_events.find({"user_id": user.user_id}, {"_id": 0}) \
         .sort("event_date", -1).to_list(500)
     return [TimelineEvent(**d) for d in docs]
+
+
+# ---------------------------------------------------------------------------
+# Dashboard summary (for Home screen chart & progress)
+# ---------------------------------------------------------------------------
+@api.get("/dashboard")
+async def dashboard(user: User = Depends(get_current_user)) -> Dict[str, Any]:
+    """Return session counts per week (last 5 weeks) and overall progress."""
+    now = now_utc()
+    # session-like activities = weekly_checkins + journal + session_logs
+    weeks: List[Dict[str, Any]] = []
+    total_this_week = 0
+    for i in range(5):
+        week_end = now - timedelta(weeks=i)
+        week_start = week_end - timedelta(days=7)
+        q = {"user_id": user.user_id, "created_at": {"$gte": week_start, "$lt": week_end}}
+        c1 = await db.weekly_checkins.count_documents(q)
+        c2 = await db.journal_entries.count_documents(q)
+        c3 = await db.session_logs.count_documents(q)
+        count = c1 + c2 + c3
+        if i == 0:
+            total_this_week = count
+        weeks.append({
+            "week_start": week_start.date().isoformat(),
+            "week_end": week_end.date().isoformat(),
+            "count": count,
+        })
+    weeks.reverse()  # oldest → newest
+
+    total_sessions = (
+        await db.weekly_checkins.count_documents({"user_id": user.user_id})
+        + await db.journal_entries.count_documents({"user_id": user.user_id})
+        + await db.session_logs.count_documents({"user_id": user.user_id})
+    )
+    target = 20
+    pct = min(round((total_sessions / target) * 100), 100) if target else 0
+    return {
+        "sessions_this_week": total_this_week,
+        "sessions_completed": total_sessions,
+        "sessions_target": target,
+        "journey_progress_pct": pct,
+        "weekly": weeks,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Starting phase selection (onboarding)
+# ---------------------------------------------------------------------------
+class StartingPhaseRequest(BaseModel):
+    phase: int
+
+
+@api.post("/onboarding/starting-phase", response_model=User)
+async def set_starting_phase(body: StartingPhaseRequest, user: User = Depends(get_current_user)):
+    if body.phase not in (1, 2, 3):
+        raise HTTPException(status_code=400, detail="phase must be 1, 2, or 3")
+    await db.users.update_one(
+        {"user_id": user.user_id},
+        {"$set": {"current_phase": body.phase, "updated_at": now_utc()}},
+    )
+    doc = await db.users.find_one({"user_id": user.user_id}, {"_id": 0})
+    return User(**doc)
 
 
 # ---------------------------------------------------------------------------
