@@ -1,18 +1,10 @@
-import { storage } from "@/src/utils/storage";
+import { supabase } from "@/src/lib/supabase";
 
 const BASE = process.env.EXPO_PUBLIC_BACKEND_URL;
-const SESSION_TOKEN_KEY = "project-life-session-token";
 
 async function getToken(): Promise<string | null> {
-  return await storage.secureGet<string>(SESSION_TOKEN_KEY, "");
-}
-
-export async function setToken(token: string): Promise<void> {
-  await storage.secureSet(SESSION_TOKEN_KEY, token);
-}
-
-export async function clearToken(): Promise<void> {
-  await storage.secureRemove(SESSION_TOKEN_KEY);
+  const { data } = await supabase.auth.getSession();
+  return data.session?.access_token ?? null;
 }
 
 async function request<T>(
@@ -39,14 +31,7 @@ async function request<T>(
 }
 
 export const api = {
-  createSession: (session_id: string) =>
-    request<{ session_token: string; user: any }>("/auth/session", {
-      method: "POST",
-      body: { session_id },
-      auth: false,
-    }),
   me: () => request<any>("/auth/me"),
-  logout: () => request<{ ok: boolean }>("/auth/logout", { method: "POST" }),
   updateProfile: (patch: Record<string, unknown>) =>
     request<any>("/profile", { method: "PUT", body: patch }),
 

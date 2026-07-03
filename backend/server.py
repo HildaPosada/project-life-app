@@ -14,6 +14,7 @@ from typing import List, Optional, Literal, Dict, Any
 import httpx
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request
+from jose import jwt as jose_jwt, JWTError
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field
 from starlette.middleware.cors import CORSMiddleware
@@ -26,12 +27,13 @@ load_dotenv(ROOT_DIR / ".env")
 
 MONGO_URL = os.environ["MONGO_URL"]
 DB_NAME = os.environ["DB_NAME"]
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
+SUPABASE_JWT_SECRET = os.environ.get("SUPABASE_JWT_SECRET", "")
+
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
 
-EMERGENT_SESSION_DATA_URL = (
-    "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data"
-)
+EMERGENT_SESSION_DATA_URL = ""
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("project-life")
@@ -52,6 +54,8 @@ def new_id(prefix: str) -> str:
 # Models
 # ---------------------------------------------------------------------------
 class SessionRequest(BaseModel):
+    """Deprecated. Left for compatibility with existing tests only."""
+
     session_id: str
 
 
@@ -239,92 +243,86 @@ class PhaseInfo(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Auth helpers
+# Auth helpers — Supabase JWT verification
 # ---------------------------------------------------------------------------
 async def get_current_user(authorization: Optional[str] = Header(None)) -> User:
+    """Verify a Supabase-issued JWT and upsert a matching Mongo user record.
+
+    Supabase issues HS256 JWTs signed with the project JWT secret. We verify
+    the signature locally (no network call), then look up (or create) our
+    domain user by the `sub` claim (Supabase user id).
+    """
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing bearer token")
     token = authorization[len("Bearer ") :].strip()
-    session = await db.user_sessions.find_one({"session_token": token}, {"_id": 0})
-    if not session:
-        raise HTTPException(status_code=401, detail="Invalid session")
-    expires_at = session["expires_at"]
-    if expires_at.tzinfo is None:
-        expires_at = expires_at.replace(tzinfo=timezone.utc)
-    if expires_at < now_utc():
-        raise HTTPException(status_code=401, detail="Session expired")
-    user_doc = await db.users.find_one({"user_id": session["user_id"]}, {"_id": 0})
-    if not user_doc:
-        raise HTTPException(status_code=401, detail="User not found")
-    return User(**user_doc)
-
-
-# ---------------------------------------------------------------------------
-# Auth endpoints
-# ---------------------------------------------------------------------------
-@api.post("/auth/session", response_model=AuthResponse)
-async def create_session(payload: SessionRequest):
-    async with httpx.AsyncClient(timeout=15.0) as http_client:
-        r = await http_client.get(
-            EMERGENT_SESSION_DATA_URL,
-            headers={"X-Session-ID": payload.session_id},
+    if not SUPABASE_JWT_SECRET:
+        raise HTTPException(status_code=500, detail="Supabase JWT secret not configured")
+    try:
+        claims = jose_jwt.decode(
+            token,
+            SUPABASE_JWT_SECRET,
+            algorithms=["HS256"],
+            audience="authenticated",
         )
-    if r.status_code != 200:
-        raise HTTPException(status_code=401, detail="Invalid session_id")
-    data = r.json()
-    email = data["email"]
-    session_token = data["session_token"]
+    except JWTError as e:
+        raise HTTPException(status_code=401, detail=f"Invalid token: {e}") from e
 
-    existing = await db.users.find_one({"email": email}, {"_id": 0})
+    sub = claims.get("sub")
+    email = claims.get("email") or (claims.get("user_metadata") or {}).get("email") or ""
+    md = claims.get("user_metadata") or {}
+    name = md.get("name") or md.get("full_name") or (email.split("@")[0] if email else "friend")
+    picture = md.get("avatar_url") or md.get("picture")
+
+    if not sub:
+        raise HTTPException(status_code=401, detail="Token missing subject")
+
+    existing = await db.users.find_one({"user_id": sub}, {"_id": 0})
     if existing:
-        user_id = existing["user_id"]
-        await db.users.update_one(
-            {"user_id": user_id},
-            {"$set": {"name": data.get("name", existing.get("name", "")),
-                      "picture": data.get("picture"),
-                      "updated_at": now_utc()}},
-        )
-    else:
-        user_id = new_id("user")
-        new_user = {
-            "user_id": user_id,
-            "email": email,
-            "name": data.get("name", email.split("@")[0]),
-            "picture": data.get("picture"),
-            "pronouns": None,
-            "location": None,
-            "in_therapy": None,
-            "therapist_release_form": None,
-            "consent_accepted": False,
-            "onboarding_complete": False,
-            "current_phase": 0,
-            "created_at": now_utc(),
-            "updated_at": now_utc(),
-        }
-        await db.users.insert_one(new_user)
+        # Refresh name/email/picture if the identity provider updated them.
+        patch = {"updated_at": now_utc()}
+        if email and existing.get("email") != email:
+            patch["email"] = email
+        if name and not existing.get("name"):
+            patch["name"] = name
+        if picture:
+            patch["picture"] = picture
+        await db.users.update_one({"user_id": sub}, {"$set": patch})
+        doc = await db.users.find_one({"user_id": sub}, {"_id": 0})
+        return User(**doc)
 
-    await db.user_sessions.insert_one({
-        "session_token": session_token,
-        "user_id": user_id,
-        "expires_at": now_utc() + timedelta(days=7),
+    new_user = {
+        "user_id": sub,
+        "email": email,
+        "name": name,
+        "picture": picture,
+        "pronouns": None,
+        "location": None,
+        "in_therapy": None,
+        "therapist_release_form": None,
+        "consent_accepted": False,
+        "onboarding_complete": False,
+        "current_phase": 0,
         "created_at": now_utc(),
-    })
+        "updated_at": now_utc(),
+    }
+    try:
+        await db.users.insert_one(new_user)
+    except Exception:
+        # Race: another concurrent request created the same user
+        doc = await db.users.find_one({"user_id": sub}, {"_id": 0})
+        if doc:
+            return User(**doc)
+        raise
+    doc = await db.users.find_one({"user_id": sub}, {"_id": 0})
+    return User(**doc)
 
-    user_doc = await db.users.find_one({"user_id": user_id}, {"_id": 0})
-    return AuthResponse(session_token=session_token, user=User(**user_doc))
 
-
+# ---------------------------------------------------------------------------
+# Auth endpoints (Supabase handles sign-up / sign-in; we just expose /me)
+# ---------------------------------------------------------------------------
 @api.get("/auth/me", response_model=User)
 async def get_me(user: User = Depends(get_current_user)):
     return user
-
-
-@api.post("/auth/logout")
-async def logout(authorization: Optional[str] = Header(None)):
-    if authorization and authorization.startswith("Bearer "):
-        token = authorization[len("Bearer ") :].strip()
-        await db.user_sessions.delete_one({"session_token": token})
-    return {"ok": True}
 
 
 # ---------------------------------------------------------------------------
@@ -1004,11 +1002,8 @@ async def root():
 @app.on_event("startup")
 async def startup():
     try:
-        await db.users.create_index("email", unique=True)
+        await db.users.create_index("email", unique=False)
         await db.users.create_index("user_id", unique=True)
-        await db.user_sessions.create_index("session_token", unique=True)
-        await db.user_sessions.create_index("user_id")
-        await db.user_sessions.create_index("expires_at", expireAfterSeconds=0)
     except Exception as e:  # noqa: BLE001
         logger.warning("Index creation warning: %s", e)
 

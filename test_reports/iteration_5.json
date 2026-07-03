@@ -1,0 +1,49 @@
+{
+  "summary": "Iteration 5 backend testing of Supabase JWT auth migration. All 20 pytest tests PASSED (100%). Verified: JWT signature verification (missing/garbage/wrong-secret/wrong-aud/expired/no-bearer-prefix all → 401; valid → 200), first-time user upsert with correct defaults (consent_accepted=false, onboarding_complete=false, current_phase=0), name fallback to email prefix when user_metadata.name is absent, idempotent /auth/me calls (no duplicate rows), profile update persistence via PUT /api/profile → GET /api/auth/me round-trip, journal CRUD, dashboard.context, memory-path returns {stones: []} for a new user, /phases returns 4 phases, safety contacts create+list, somatic-practices seeded (8), journal/prompt string. Removed endpoints POST /api/auth/session and POST /api/auth/logout both return 405 (Method Not Allowed) as expected. No _id leaks in any inspected response. Replaced obsolete conftest.py that seeded `qa-token-xyz` in user_sessions; deleted the three stale iteration-1..4 test files.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "server.py:36 & 56-60", "issue": "Dead code: EMERGENT_SESSION_DATA_URL = \"\" constant and the SessionRequest Pydantic model are leftovers from the Emergent OAuth flow. Safe to remove for cleanliness."},
+      {"endpoint": "server.py:88-90", "issue": "AuthResponse model (session_token + user) is defined but no endpoint returns it anymore. Dead code post-migration."},
+      {"endpoint": "server.py:1-5", "issue": "Module docstring still says 'Auth: Emergent-managed Google OAuth (session_token flow, 7-day expiry).' — should be updated to 'Auth: Supabase-issued HS256 JWTs verified locally with SUPABASE_JWT_SECRET.'"}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/conftest.py",
+    "/app/backend/tests/test_supabase_auth_and_endpoints.py",
+    "/app/test_reports/pytest/iteration_5_results.xml"
+  ],
+  "action_items": [
+    "OPTIONAL cleanup: remove dead code in server.py — EMERGENT_SESSION_DATA_URL constant, SessionRequest model, and AuthResponse model (no functional impact, but keeps the file honest post-migration).",
+    "OPTIONAL: update the module docstring at the top of server.py to describe the Supabase JWT flow instead of the Emergent OAuth flow.",
+    "No functional fixes required — the Supabase JWT migration is working correctly end-to-end on the backend."
+  ],
+  "critical_code_review_comments": [
+    "get_current_user() correctly verifies HS256 signature with SUPABASE_JWT_SECRET, enforces aud=\"authenticated\", handles missing/expired/malformed tokens with 401, and upserts a Mongo user document keyed by `sub`. Race-condition handling on concurrent first-time upsert is present.",
+    "All Mongo find() calls use projection {\"_id\": 0} — confirmed no _id leaks across the entire tested surface area (dashboard, journal, memory-path, phases, safety, users).",
+    "Name fallback chain (user_metadata.name → user_metadata.full_name → email prefix → 'friend') is robust.",
+    "Backend .env has all required Supabase keys. Frontend .env has EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY for the client-side supabase-js SDK.",
+    "server.py is 1024 lines — slightly over the 700-line guideline; consider splitting into routers (auth, journal, phases, safety, memory_path) in a future refactor. Not blocking."
+  ],
+  "updated_files": [
+    "/app/backend/tests/conftest.py",
+    "/app/backend/tests/test_supabase_auth_and_endpoints.py",
+    "/app/memory/test_credentials.md"
+  ],
+  "deleted_files": [
+    "/app/backend/tests/test_journal_autosave_and_prompt.py",
+    "/app/backend/tests/test_memory_path_and_context.py",
+    "/app/backend/tests/test_project_life_backend.py"
+  ],
+  "success_rate": {"backend": "100% (20/20)", "frontend": "not tested (backend-only iteration)"},
+  "seed_data_creation": "conftest.py auto-wipes the QA user (sub=11111111-1111-4111-8111-111111111111) before and after the session; no persistent seed data required — JWTs are minted on demand.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Auth is now Supabase JWT-based. Use `make_jwt(...)` from tests/conftest.py to mint tokens. NEVER expect POST /api/auth/session or POST /api/auth/logout — they return 405. The QA user's sub is 11111111-1111-4111-8111-111111111111 (email qa+iter5@projectlife.local). MongoDB collection `user_sessions` is dropped by the session fixture — do not rely on it. All endpoints require Authorization: Bearer <supabase_jwt>."
+}

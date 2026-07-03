@@ -1,9 +1,11 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { Platform } from "react-native";
 import * as Linking from "expo-linking";
 import * as WebBrowser from "expo-web-browser";
+import * as AppleAuthentication from "expo-apple-authentication";
 
-import { api, clearToken, setToken } from "@/src/lib/api";
+import { supabase } from "@/src/lib/supabase";
+import { api } from "@/src/lib/api";
 
 export type User = {
   user_id: string;
@@ -20,9 +22,15 @@ export type User = {
 
 type AuthContextValue = {
   user: User | null;
+  session: any | null;
   loading: boolean;
   authError: string | null;
-  login: () => Promise<void>;
+  signUpWithEmail: (email: string, password: string, name: string) => Promise<{ needsVerification: boolean }>;
+  signInWithEmail: (email: string, password: string) => Promise<void>;
+  signInWithGoogle: () => Promise<void>;
+  signInWithApple: () => Promise<void>;
+  forgotPassword: (email: string) => Promise<void>;
+  updatePassword: (newPassword: string) => Promise<void>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
   clearAuthError: () => void;
@@ -30,176 +38,192 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-const AUTH_ROOT = "https://auth.emergentagent.com";
-
-function getRedirectUrl(): string {
+function redirectUrl(path: string = "auth"): string {
   if (Platform.OS === "web") {
-    return typeof window !== "undefined" ? window.location.origin + "/" : "/";
+    return typeof window !== "undefined" ? window.location.origin + "/" + path : "/" + path;
   }
-  return Linking.createURL("auth");
-}
-
-// Robust session_id extraction. Supports:
-//   .../path#session_id=xxx
-//   .../path?session_id=xxx
-//   .../path#session_id=xxx&foo=bar
-function parseSessionId(url: string): string | null {
-  if (!url) return null;
-  try {
-    // Strip protocol-relative / custom schemes safely by giving URL a base if needed.
-    const u = new URL(url);
-    // Try search first
-    const q = u.searchParams.get("session_id");
-    if (q) return q;
-    // Then hash — strip leading '#'
-    const rawHash = u.hash.startsWith("#") ? u.hash.substring(1) : u.hash;
-    if (rawHash) {
-      const hashParams = new URLSearchParams(rawHash);
-      const h = hashParams.get("session_id");
-      if (h) return h;
-    }
-  } catch {
-    // Fallback: regex scan
-    const m = /(?:[?#&])session_id=([^&#]+)/.exec(url);
-    if (m) return decodeURIComponent(m[1]);
-  }
-  return null;
+  return Linking.createURL(path);
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [session, setSession] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
-  const processingRef = useRef(false);
 
   const clearAuthError = useCallback(() => setAuthError(null), []);
 
-  const refresh = useCallback(async () => {
+  // Ensure our MongoDB user record exists / is up to date whenever we get a session.
+  const syncProfile = useCallback(async () => {
     try {
       const me = await api.me();
       setUser(me);
-      return me;
     } catch {
       setUser(null);
-      await clearToken();
-      return null;
     }
   }, []);
 
-  const finishLoginWithSessionId = useCallback(async (sessionId: string) => {
-    if (processingRef.current) return;
-    processingRef.current = true;
-    try {
-      const resp = await api.createSession(sessionId);
-      await setToken(resp.session_token);
-      setUser(resp.user);
-      setAuthError(null);
-    } catch (e: any) {
-      setAuthError(
-        "We couldn't confirm your sign-in. Please try again — if it keeps happening, close this tab and start over.",
-      );
-      // eslint-disable-next-line no-console
-      console.warn("[auth] session exchange failed", e?.message ?? e);
-    } finally {
-      processingRef.current = false;
-    }
-  }, []);
-
-  const login = useCallback(async () => {
-    setAuthError(null);
-    const redirectUrl = getRedirectUrl();
-    const authUrl = `${AUTH_ROOT}/?redirect=${encodeURIComponent(redirectUrl)}`;
-
-    if (Platform.OS === "web") {
-      if (typeof window !== "undefined") window.location.href = authUrl;
-      return;
-    }
-
-    try {
-      const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUrl);
-      if (result.type === "success" && result.url) {
-        const sid = parseSessionId(result.url);
-        if (sid) {
-          await finishLoginWithSessionId(sid);
-        } else {
-          setAuthError("Sign-in returned but no session was found. Please try again.");
-        }
-      } else if (result.type === "cancel" || result.type === "dismiss") {
-        // Silent — user backed out.
-      } else {
-        setAuthError("Sign-in was interrupted. Please try again.");
-      }
-    } catch (e: any) {
-      setAuthError("Could not open the sign-in window. Please try again.");
-      // eslint-disable-next-line no-console
-      console.warn("[auth] openAuthSessionAsync failed", e?.message ?? e);
-    }
-  }, [finishLoginWithSessionId]);
-
-  const logout = useCallback(async () => {
-    try { await api.logout(); } catch { /* ignore */ }
-    await clearToken();
-    setUser(null);
-  }, []);
-
-  // Bootstrap on mount
   useEffect(() => {
     let alive = true;
     (async () => {
-      try {
-        // WEB — check current URL for session_id (from OAuth redirect)
-        if (Platform.OS === "web" && typeof window !== "undefined") {
-          const sid = parseSessionId(window.location.href);
-          if (sid) {
-            try {
-              await finishLoginWithSessionId(sid);
-            } finally {
-              // Clean the URL so we don't reprocess on refresh
-              if (typeof window.history?.replaceState === "function") {
-                window.history.replaceState(null, "", window.location.pathname);
-              }
-            }
-            if (!alive) return;
-            setLoading(false);
-            return;
-          }
-        } else {
-          // MOBILE — check cold-start deep link
-          const initial = await Linking.getInitialURL();
-          if (initial) {
-            const sid = parseSessionId(initial);
-            if (sid) {
-              await finishLoginWithSessionId(sid);
-              if (!alive) return;
-              setLoading(false);
-              return;
-            }
-          }
-        }
-        // No fresh session_id → try an existing session_token
-        await refresh();
-      } finally {
-        if (alive) setLoading(false);
-      }
+      const { data } = await supabase.auth.getSession();
+      if (!alive) return;
+      setSession(data.session);
+      if (data.session) await syncProfile();
+      setLoading(false);
     })();
 
-    let sub: { remove: () => void } | null = null;
-    if (Platform.OS !== "web") {
-      sub = Linking.addEventListener("url", ({ url }) => {
-        const sid = parseSessionId(url);
-        if (sid) finishLoginWithSessionId(sid).catch(() => {});
-      });
-    }
+    const { data: sub } = supabase.auth.onAuthStateChange(async (_event, s) => {
+      setSession(s);
+      if (s) {
+        await syncProfile();
+      } else {
+        setUser(null);
+      }
+    });
 
     return () => {
       alive = false;
-      if (sub) sub.remove();
+      sub.subscription.unsubscribe();
     };
-  }, [refresh, finishLoginWithSessionId]);
+  }, [syncProfile]);
 
-  const value = useMemo(
-    () => ({ user, loading, authError, login, logout, refresh: async () => { await refresh(); }, clearAuthError }),
-    [user, loading, authError, login, logout, refresh, clearAuthError],
+  const signUpWithEmail = useCallback(async (email: string, password: string, name: string) => {
+    setAuthError(null);
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: { name },
+        emailRedirectTo: redirectUrl("auth-confirmed"),
+      },
+    });
+    if (error) {
+      setAuthError(error.message);
+      throw error;
+    }
+    // If email confirmation is required, session will be null.
+    const needsVerification = !data.session;
+    return { needsVerification };
+  }, []);
+
+  const signInWithEmail = useCallback(async (email: string, password: string) => {
+    setAuthError(null);
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) {
+      setAuthError(error.message);
+      throw error;
+    }
+  }, []);
+
+  const signInWithGoogle = useCallback(async () => {
+    setAuthError(null);
+    const redirect = redirectUrl("auth-callback");
+    if (Platform.OS === "web") {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: { redirectTo: redirect },
+      });
+      if (error) setAuthError(error.message);
+      return;
+    }
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: redirect, skipBrowserRedirect: true },
+    });
+    if (error || !data?.url) {
+      setAuthError(error?.message ?? "Could not start Google sign-in");
+      return;
+    }
+    const result = await WebBrowser.openAuthSessionAsync(data.url, redirect);
+    if (result.type === "success" && result.url) {
+      // Parse tokens from the returned URL and set the session
+      try {
+        const url = new URL(result.url);
+        const hash = url.hash.startsWith("#") ? url.hash.substring(1) : url.hash;
+        const params = new URLSearchParams(hash || url.search);
+        const access_token = params.get("access_token");
+        const refresh_token = params.get("refresh_token");
+        if (access_token && refresh_token) {
+          const { error: setErr } = await supabase.auth.setSession({ access_token, refresh_token });
+          if (setErr) setAuthError(setErr.message);
+        }
+      } catch (e: any) {
+        setAuthError("Could not complete Google sign-in.");
+      }
+    }
+  }, []);
+
+  const signInWithApple = useCallback(async () => {
+    setAuthError(null);
+    if (Platform.OS !== "ios") {
+      setAuthError("Apple Sign-In is available on iOS native builds.");
+      return;
+    }
+    try {
+      const isAvailable = await AppleAuthentication.isAvailableAsync();
+      if (!isAvailable) {
+        setAuthError("Apple Sign-In is not available on this device.");
+        return;
+      }
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+      });
+      if (!credential.identityToken) {
+        setAuthError("Apple did not return a token. Please try again.");
+        return;
+      }
+      const { error } = await supabase.auth.signInWithIdToken({
+        provider: "apple",
+        token: credential.identityToken,
+      });
+      if (error) setAuthError(error.message);
+    } catch (e: any) {
+      if (e.code === "ERR_REQUEST_CANCELED") return;
+      setAuthError(e.message || "Apple Sign-In failed.");
+    }
+  }, []);
+
+  const forgotPassword = useCallback(async (email: string) => {
+    setAuthError(null);
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: redirectUrl("reset-password"),
+    });
+    if (error) {
+      setAuthError(error.message);
+      throw error;
+    }
+  }, []);
+
+  const updatePassword = useCallback(async (newPassword: string) => {
+    setAuthError(null);
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) {
+      setAuthError(error.message);
+      throw error;
+    }
+  }, []);
+
+  const logout = useCallback(async () => {
+    await supabase.auth.signOut();
+    setUser(null);
+    setSession(null);
+  }, []);
+
+  const refresh = useCallback(async () => {
+    await syncProfile();
+  }, [syncProfile]);
+
+  const value = useMemo<AuthContextValue>(
+    () => ({
+      user, session, loading, authError,
+      signUpWithEmail, signInWithEmail, signInWithGoogle, signInWithApple,
+      forgotPassword, updatePassword, logout, refresh, clearAuthError,
+    }),
+    [user, session, loading, authError, signUpWithEmail, signInWithEmail, signInWithGoogle, signInWithApple, forgotPassword, updatePassword, logout, refresh, clearAuthError],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

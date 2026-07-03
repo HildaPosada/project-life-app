@@ -14,7 +14,7 @@ LogBox.ignoreAllLogs(true);
 SplashScreen.preventAutoHideAsync();
 
 function AuthGate() {
-  const { user, loading } = useAuth();
+  const { user, session, loading } = useAuth();
   const router = useRouter();
   const segments = useSegments();
 
@@ -22,14 +22,17 @@ function AuthGate() {
     if (loading) return;
     const first = segments[0];
     const inTabs = first === "(tabs)";
-    if (!user) {
-      if (first !== "login") router.replace("/login");
-    } else if (!user.onboarding_complete) {
+    const publicRoutes = ["login", "sign-up", "forgot-password", "reset-password", "auth-confirmed"];
+
+    if (!session) {
+      if (!publicRoutes.includes(first)) router.replace("/login");
+    } else if (user && !user.onboarding_complete) {
       if (first !== "onboarding") router.replace("/onboarding");
-    } else if (!inTabs) {
-      router.replace("/(tabs)/home");
+    } else if (user && !inTabs) {
+      const allowedAuthed = ["(tabs)", "safety", "checkin", "journal-entry", "phase", "timeline-new", "upload-new", "session-log-new", "find-therapist", "menu", "memory", "reset-password"];
+      if (!allowedAuthed.includes(first)) router.replace("/(tabs)/home");
     }
-  }, [user, loading, segments, router]);
+  }, [user, session, loading, segments, router]);
 
   if (loading) {
     return (
