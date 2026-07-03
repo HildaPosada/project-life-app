@@ -93,4 +93,7 @@ export const api = {
   dashboard: () => request<any>("/dashboard"),
   setStartingPhase: (phase: number) =>
     request<any>("/onboarding/starting-phase", { method: "POST", body: { phase } }),
+
+  memoryPath: () => request<{ stones: any[] }>("/memory-path"),
+  memoryStone: (id: string) => request<any>(`/memory-path/${id}`),
 };

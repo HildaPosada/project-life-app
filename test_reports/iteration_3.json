@@ -1,0 +1,49 @@
+{
+  "summary": "Iteration 3 (backend-only). Added 16 targeted tests for the new Memory Path feature + dashboard.context field in /app/backend/tests/test_memory_path_and_context.py. Full backend suite now 50/50 PASSED (34 carried over + 16 new). Per-test autouse fixture wipes user-scoped activity collections (journal_entries, weekly_checkins, session_logs, safety_checkins, emergency_contacts, therapist_uploads, memories, timeline_events) and resets the QA user (current_phase=0, consent_accepted=False) before AND after each subtest, so counts always start from a known baseline. Coverage: (1) GET /api/dashboard fresh user -> context.is_first_visit=true, days_since_last_activity=null, active_days_count=0, is_returning=false, milestone_today=false, milestone_title=null; after 1 journal -> is_first_visit=false, days_since_last_activity=0, active_days_count=1, milestone_today=true, milestone_title='The first stone'. Legacy dashboard keys still present. (2) GET /api/memory-path: 401 without bearer; empty user -> {stones: []}; 1 journal -> 1 stone kind=journal title='The first stone' with valid stone_id/ref_id/date/preview; 5 journals -> 2 stones (first + 'Chapter 5 of reflection') ordered chronologically; +4 weekly check-ins -> +1 stone kind=checkin title='A month of showing up'; user with current_phase=1 -> 1 additional stone kind=phase stone_id='stone_phase_1' title contains 'Season 1'. Verified NO `_id` leaks (recursive assert) and NO `created_at` datetime objects on stone objects (only iso `date` string) across every subtest. (3) GET /api/memory-path/{stone_id}: 401 without bearer; unknown id -> 404; journal stone -> response.entry has full journal doc (entry_id, title, body, mood_word, mood_score match); checkin stone -> response.entry has full check-in doc (checkin_id, mood_score, feeling_summary). (4) Regression sanity all green: bad session_id -> 401, /auth/me with bearer -> 200 (correct user_id), POST /api/journal still works, GET /api/phases still returns 4 phases in order [0,1,2,3]. Google OAuth remains MOCKED via direct MongoDB session seeding (conftest.py qa_user fixture).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/memory-path (phase stone)", "issue": "Phase stone date is derived from user.updated_at, so any subsequent profile edit shifts the phase-stone date backwards/forwards. A dedicated phase_transitions log would give a stable historical date. Non-blocking."},
+      {"endpoint": "GET /api/dashboard.context.days_since_last_activity", "issue": "Uses UTC date subtraction (now.date() - latest.date()); users in non-UTC timezones near midnight may see 0 vs 1 flip. Acceptable for MVP; note only."},
+      {"endpoint": "Efficiency: /api/dashboard", "issue": "Now calls _compute_memory_stones() inside /dashboard on every request, which itself scans up to 1000 journals + 500 checkins. Fine at current scale but worth caching / limiting once user data grows."},
+      {"endpoint": "GET /api/memory-path/{stone_id} (journal / checkin)", "issue": "The nested `entry` dict is returned by ad-hoc dict shape (via find_one with {_id:0}) and includes a `created_at` datetime that FastAPI serialises to ISO — OK today, but not going through a Pydantic response_model like the other endpoints. Consider typing it for consistency."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_memory_path_and_context.py",
+    "/app/backend/tests/test_project_life_backend.py",
+    "/app/backend/tests/conftest.py",
+    "/app/test_reports/pytest/iteration_3_results.xml",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "(Optional) Consider adding a `phase_transitions` collection and appending an entry on advance/starting-phase so the phase stone has a stable historical date instead of user.updated_at.",
+    "(Optional) Return the nested `entry` on /api/memory-path/{stone_id} via an explicit Pydantic response_model for type safety and OpenAPI clarity.",
+    "(Optional carryover) Add Pydantic Field(min_length=1) on SessionRequest.session_id to reject '' as 422 instead of the current 401-after-upstream.",
+    "(Optional carryover) Require bearer on POST /api/auth/logout for a stricter contract.",
+    "Main agent frontend smoke test remains the only unverified area: confirm the mobile UI actually renders memory-path stones + surfaces dashboard.context.milestone_today on the Today screen."
+  ],
+  "critical_code_review_comments": [
+    "server.py _compute_memory_stones is O(1000 journals + 500 checkins) per call and is invoked BOTH by /memory-path AND /dashboard. Safe at MVP scale; watch as data grows.",
+    "server.py /api/memory-path strips `created_at` from every stone before returning — good, prevents datetime leaks. /api/memory-path/{stone_id} also strips created_at at top level. Both endpoints exclude _id via find_one({_id:0}). Verified in tests.",
+    "Phase stone uses `str(user.current_phase)` as ref_id — string type. Detail endpoint casts back with int(). Consistent, though a phase-transition log would be cleaner.",
+    "server.py is now ~960 lines. Approaching the 700-line guideline. Recommend splitting into routers (auth, phases, journal, safety, memory_path) before adding more endpoints.",
+    "Dashboard.context correctly wires is_first_visit to total_sessions==0 (not to any 'first login' flag) — matches spec.",
+    "No new deprecated Expo/RN packages introduced (backend-only iteration)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_memory_path_and_context.py (NEW — 16 tests, uses autouse cleanup fixture)"
+  ],
+  "success_rate": {"backend": "100% (50/50 full suite; 16/16 new iteration-3 tests)", "frontend": "not_tested_by_design"},
+  "seed_data_creation": "Reused conftest.py qa_user fixture (user_qatest + session token qa-token-xyz). New file adds an autouse per-test fixture that wipes ACTIVITY_COLLS and resets the user (current_phase=0, consent_accepted=False) before/after each subtest, so counts always start from a known baseline as requested.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend green at 50/50. Iteration-3 test file /app/backend/tests/test_memory_path_and_context.py is idempotent (per-test cleanup) and reusable. If Memory Path grows (e.g. gets its own stone-creation collection), extend that file. Google OAuth remains MOCKED via MongoDB seed. Real Google browser flow still cannot be automated in this container — flag for manual smoke by the main agent when relevant.",
+  "rca_of_issue": "N/A — no bugs found in the new endpoints. All spec requirements met: dashboard context field with all 6 sub-keys, memory-path list with correct stone derivation (first + every 5th journal, every 4th checkin, phase stone when current_phase>0), memory-path detail with attached entry / 404 / auth guard, and no _id or datetime leaks."
+}

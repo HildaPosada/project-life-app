@@ -702,13 +702,12 @@ async def list_timeline(user: User = Depends(get_current_user)):
 
 
 # ---------------------------------------------------------------------------
-# Dashboard summary (for Home screen chart & progress)
+# Dashboard summary (for Today screen)
 # ---------------------------------------------------------------------------
 @api.get("/dashboard")
 async def dashboard(user: User = Depends(get_current_user)) -> Dict[str, Any]:
-    """Return session counts per week (last 5 weeks) and overall progress."""
+    """Sessions rollup + emotional context signals for the Today screen."""
     now = now_utc()
-    # session-like activities = weekly_checkins + journal + session_logs
     weeks: List[Dict[str, Any]] = []
     total_this_week = 0
     for i in range(5):
@@ -726,7 +725,7 @@ async def dashboard(user: User = Depends(get_current_user)) -> Dict[str, Any]:
             "week_end": week_end.date().isoformat(),
             "count": count,
         })
-    weeks.reverse()  # oldest → newest
+    weeks.reverse()
 
     total_sessions = (
         await db.weekly_checkins.count_documents({"user_id": user.user_id})
@@ -735,13 +734,171 @@ async def dashboard(user: User = Depends(get_current_user)) -> Dict[str, Any]:
     )
     target = 20
     pct = min(round((total_sessions / target) * 100), 100) if target else 0
+
+    # ------- Context signals for contextual affirmations -------
+    latest_journal = await db.journal_entries.find_one(
+        {"user_id": user.user_id}, {"_id": 0}, sort=[("created_at", -1)]
+    )
+    latest_checkin = await db.weekly_checkins.find_one(
+        {"user_id": user.user_id}, {"_id": 0}, sort=[("created_at", -1)]
+    )
+    latest = None
+    for cand in [latest_journal, latest_checkin]:
+        if not cand:
+            continue
+        ts = cand["created_at"]
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        if latest is None or ts > latest:
+            latest = ts
+    days_since_last = None
+    if latest is not None:
+        days_since_last = (now.date() - latest.date()).days
+
+    # Distinct active days across all activity
+    pipeline = [
+        {"$match": {"user_id": user.user_id}},
+        {"$project": {"_id": 0, "d": {"$dateToString": {"format": "%Y-%m-%d", "date": "$created_at"}}}},
+    ]
+    active_days = set()
+    for col in ("journal_entries", "weekly_checkins", "session_logs"):
+        async for doc in db[col].aggregate(pipeline):
+            active_days.add(doc["d"])
+
+    # Milestone hit recently? (a stone will pop today if there's a stone dated today)
+    milestone_today = False
+    milestone_title = None
+    milestones_all = await _compute_memory_stones(user)
+    today_iso = now.date().isoformat()
+    if milestones_all:
+        latest_stone = milestones_all[-1]
+        if latest_stone["date"] == today_iso:
+            milestone_today = True
+            milestone_title = latest_stone["title"]
+
     return {
         "sessions_this_week": total_this_week,
         "sessions_completed": total_sessions,
         "sessions_target": target,
         "journey_progress_pct": pct,
         "weekly": weeks,
+        "context": {
+            "days_since_last_activity": days_since_last,
+            "active_days_count": len(active_days),
+            "is_first_visit": total_sessions == 0,
+            "is_returning": days_since_last is not None and days_since_last >= 14,
+            "milestone_today": milestone_today,
+            "milestone_title": milestone_title,
+        },
     }
+
+
+# ---------------------------------------------------------------------------
+# Memory Path — meaningful stones a user can tap to revisit a chapter
+# ---------------------------------------------------------------------------
+async def _compute_memory_stones(user: User) -> List[Dict[str, Any]]:
+    """Derive a sequence of memory stones from the user's own history.
+
+    Stones are chapters, not achievements. Each stone points to a real
+    saved moment (journal entry, weekly check-in, or phase transition).
+    """
+    stones: List[Dict[str, Any]] = []
+
+    # Journal chapters — first entry + every 5th entry
+    journals = await db.journal_entries.find({"user_id": user.user_id}, {"_id": 0}) \
+        .sort("created_at", 1).to_list(1000)
+    for idx, j in enumerate(journals):
+        n = idx + 1
+        is_first = n == 1
+        is_milestone = n > 1 and n % 5 == 0
+        if not (is_first or is_milestone):
+            continue
+        ts: datetime = j["created_at"]
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        stones.append({
+            "stone_id": f"stone_journal_{j['entry_id']}",
+            "kind": "journal",
+            "title": "The first stone" if is_first else f"Chapter {n} of reflection",
+            "date": ts.date().isoformat(),
+            "created_at": ts,
+            "ref_id": j["entry_id"],
+            "preview": (j.get("body") or "")[:140],
+        })
+
+    # Weekly check-in chapters — every 4th check-in
+    checkins = await db.weekly_checkins.find({"user_id": user.user_id}, {"_id": 0}) \
+        .sort("created_at", 1).to_list(500)
+    for idx, c in enumerate(checkins):
+        n = idx + 1
+        if n % 4 != 0:
+            continue
+        ts = c["created_at"]
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        stones.append({
+            "stone_id": f"stone_checkin_{c['checkin_id']}",
+            "kind": "checkin",
+            "title": "A month of showing up",
+            "date": ts.date().isoformat(),
+            "created_at": ts,
+            "ref_id": c["checkin_id"],
+            "preview": (c.get("feeling_summary") or "")[:140],
+        })
+
+    # Phase changes — one stone per phase reached
+    # We approximate: use user's updated_at + current_phase (no dedicated log yet)
+    # If phase > 0, add a stone for entering current phase (best-effort).
+    if user.current_phase > 0:
+        stones.append({
+            "stone_id": f"stone_phase_{user.current_phase}",
+            "kind": "phase",
+            "title": f"Entered Season {user.current_phase}",
+            "date": (user.updated_at.date() if user.updated_at.tzinfo else user.updated_at.replace(tzinfo=timezone.utc).date()).isoformat(),
+            "created_at": user.updated_at if user.updated_at.tzinfo else user.updated_at.replace(tzinfo=timezone.utc),
+            "ref_id": str(user.current_phase),
+            "preview": "A new season of your healing arc.",
+        })
+
+    stones.sort(key=lambda s: s["created_at"])
+    return stones
+
+
+@api.get("/memory-path")
+async def memory_path(user: User = Depends(get_current_user)) -> Dict[str, Any]:
+    stones = await _compute_memory_stones(user)
+    # strip datetime, keep iso date
+    for s in stones:
+        s.pop("created_at", None)
+    return {"stones": stones}
+
+
+@api.get("/memory-path/{stone_id}")
+async def memory_stone_detail(stone_id: str, user: User = Depends(get_current_user)):
+    stones = await _compute_memory_stones(user)
+    match = next((s for s in stones if s["stone_id"] == stone_id), None)
+    if not match:
+        raise HTTPException(status_code=404, detail="Stone not found")
+
+    detail: Dict[str, Any] = {**match}
+    detail.pop("created_at", None)
+
+    if match["kind"] == "journal":
+        j = await db.journal_entries.find_one(
+            {"user_id": user.user_id, "entry_id": match["ref_id"]}, {"_id": 0}
+        )
+        if j:
+            detail["entry"] = j
+    elif match["kind"] == "checkin":
+        c = await db.weekly_checkins.find_one(
+            {"user_id": user.user_id, "checkin_id": match["ref_id"]}, {"_id": 0}
+        )
+        if c:
+            detail["entry"] = c
+    elif match["kind"] == "phase":
+        detail["entry"] = {"phase": int(match["ref_id"])}
+
+    return detail
 
 
 # ---------------------------------------------------------------------------
