@@ -1,0 +1,155 @@
+{
+  "app_name": "Project Life",
+  "personality": "8 Hand-Drawn / Journal",
+  "personality_one_liner": "A warm, unhurried, and emotionally safe digital sanctuary guiding users through a slow, trauma-informed healing arc.",
+  "color": {
+    "surface": "#F9F8F5",
+    "onSurface": "#3D3A36",
+    "surfaceSecondary": "#F2EFE8",
+    "onSurfaceSecondary": "#59544D",
+    "surfaceTertiary": "#EAE5DC",
+    "onSurfaceTertiary": "#6E685F",
+    "surfaceInverse": "#2C2926",
+    "onSurfaceInverse": "#F9F8F5",
+    "brand": "#7C8D7C",
+    "brandPrimary": "#7C8D7C",
+    "onBrandPrimary": "#FFFFFF",
+    "brandSecondary": "#B78775",
+    "onBrandSecondary": "#FFFFFF",
+    "brandTertiary": "#D2D6CB",
+    "onBrandTertiary": "#454D45",
+    "success": "#819A82",
+    "onSuccess": "#FFFFFF",
+    "warning": "#C49A6C",
+    "onWarning": "#FFFFFF",
+    "error": "#B77575",
+    "onError": "#FFFFFF",
+    "info": "#919A96",
+    "onInfo": "#FFFFFF",
+    "border": "#E2DCD1",
+    "borderStrong": "#C8BEB0",
+    "divider": "#E6E1D6"
+  },
+  "typography": {
+    "displayFontFamily": "Fraunces",
+    "textFontFamily": "Nunito",
+    "scale": {
+      "sm": 12,
+      "base": 14,
+      "lg": 16,
+      "xl": 20,
+      "2xl": 24
+    }
+  },
+  "spacing": {
+    "rule": "Generous spacing. Allow the UI to breathe like a physical journal. Avoid cramped sections, utilize generous padding around cards and text.",
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "2xl": 32,
+    "3xl": 48
+  },
+  "radius_tokens": {
+    "sm": 6,
+    "md": 12,
+    "lg": 20,
+    "pill": 999
+  },
+  "shadow_tier": 0,
+  "navigation": "bottom_tabs",
+  "icon_set": "Feather",
+  "glassmorphism": {
+    "enabled": false,
+    "do's": [],
+    "dont's": [
+      "Avoid heavy blur and glassmorphism. Use opaque, matte surfaces matching the hand-drawn, tactile paper-like theme."
+    ]
+  },
+  "platform_libraries": {
+    "glass": {
+      "ios": "expo-glass-effect",
+      "android": "expo-blur",
+      "low_end_android_fallback": "solid surfaceSecondary"
+    },
+    "image": "expo-image",
+    "blur": "expo-blur",
+    "bottom_sheet": "@gorhom/bottom-sheet",
+    "animation": "react-native-reanimated",
+    "gesture": "react-native-gesture-handler"
+  },
+  "screens": [
+    {
+      "name": "Home",
+      "purpose": "A calm grounding space displaying current phase progress, immediate safety check-ins, and gentle reminders without urgency.",
+      "states": {
+        "loading": "Centered gentle fading organic shape in brandPrimary.",
+        "empty": "N/A - Home always has foundational tools.",
+        "error": "Soft text note 'We need a moment to reconnect' with a calm retry button."
+      },
+      "layout": "Header with 'Do you feel safe today?' subtle check-in CTA. Main content uses stacked, organically spaced cards for the current phase (e.g., Phase 1 Talk Therapy weekly check-in). A pinned, easy-to-reach Safety Net FAB or bottom button. No aggressive streaks or gamification metrics. Use the 'warm_journal' image as a soft background banner with a gradient-to-dark scrim."
+    },
+    {
+      "name": "Vault",
+      "purpose": "A private, encrypted journal and mood tracker feeling like a safe physical notebook.",
+      "states": {
+        "loading": "Subtle skeleton lines resembling ruled paper.",
+        "empty": "Illustration of an open notebook with 'Your private space awaits. Tap to log your first thought.'",
+        "error": "Error loading vault message with gentle phrasing."
+      },
+      "layout": "Two-tab layout or segmented control: 'Journal' and 'Insights'. Journal lists past entries with soft dividers (no hard card shadows). Prominent 'New Entry' CTA pinned above the bottom safe area. Insights dashboard shows mood trends using muted colors and soft curves."
+    },
+    {
+      "name": "JourneyMap",
+      "purpose": "A zoomed-out, non-linear timeline of the 2.2-year healing arc showing unlocked and locked phases.",
+      "states": {
+        "loading": "Fading nodes on a vertical path.",
+        "empty": "Initial onboarding message: 'Every journey begins with a single step. Let's start Phase 0.'",
+        "error": "Unable to load timeline. Gentle retry."
+      },
+      "layout": "A vertical, winding path (timeline) connecting Phase 0 to Phase 3. Active phase is highlighted with 'brandPrimary', locked phases are softly faded ('surfaceTertiary'). Background uses 'calm_nature_abstract' with an 80% surface scrim. Tapping a phase opens a bottom sheet with description and evaluator progress."
+    },
+    {
+      "name": "SomaticLibrary",
+      "purpose": "A structured repository of somatic practices, guided audio/video, and therapist summary uploads.",
+      "states": {
+        "loading": "Standard soft spinner.",
+        "empty": "Library empty state illustration.",
+        "error": "Failed to load practices."
+      },
+      "layout": "Grid or list of practice categories (Breathing, Grounding, EMDR pre-work). Cards use tinted icon containers ('brandTertiary' background) with Feather icons. A dedicated section/card for 'Therapist Uploads' acting as a secure drop zone."
+    }
+  ],
+  "images": {
+    "home_banner": {
+      "url": "https://images.unsplash.com/photo-1605187151664-9d89904d62d0?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1OTV8MHwxfHNlYXJjaHwzfHx3YXJtJTIwam91cm5hbGluZyUyMGFlc3RoZXRpYyUyMG5vdGVib29rJTIwY29mZmVlfGVufDB8fHx8MTc4MzA2NjMxN3ww&ixlib=rb-4.1.0&q=85",
+      "alt": "Warm aesthetic journaling notebook and coffee"
+    },
+    "calm_nature_abstract": {
+      "url": "https://images.unsplash.com/photo-1629106279285-a56fded8cda8?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjY2NzF8MHwxfHNlYXJjaHwxfHxtaW5pbWFsaXN0JTIwbmF0dXJlJTIwYWVzdGhldGljJTIwZm9yZXN0JTIwc29mdCUyMGxpZ2h0fGVufDB8fHx8MTc4MzA2NjMxN3ww&ixlib=rb-4.1.0&q=85",
+      "alt": "Minimalist soft nature forest aesthetic"
+    },
+    "emdr_abstract": {
+      "url": "https://images.unsplash.com/photo-1629196615138-bdce993b0a54?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2Njd8MHwxfHNlYXJjaHwzfHxjYWxtaW5nJTIwYWJzdHJhY3QlMjB3YXRlcmNvbG9yJTIwdGV4dHVyZSUyMG5hdHVyZXxlbnwwfHx8fDE3ODMwNjYzMTd8MA&ixlib=rb-4.1.0&q=85",
+      "alt": "Calming abstract green watercolor texture"
+    }
+  },
+  "haptics": {
+    "primary_button_press": "impactLight",
+    "tab_change": "selection",
+    "journal_entry_save": "notificationSuccess",
+    "safety_net_open": "impactMedium"
+  },
+  "instructions_to_main_agent": [
+    "Strictly adhere to the '8 Hand-Drawn / Journal' personality. The app MUST feel like a warm, safe sanctuary, not a clinical medical app.",
+    "Use 'Fraunces' for display/headings and 'Nunito' for body text. Enforce a maximum font weight of 500 across all typography.",
+    "Completely avoid all blue, purple, indigo, or navy tones. The palette uses warm off-whites, sage greens, and soft clays.",
+    "Implement 'Safety Net' access prominently but calmly on the Home screen. Do not use high-stress red alerts; use 'brandSecondary' (clay) or 'brandPrimary' (sage) for prompts.",
+    "For all images used as backgrounds or banners, strictly implement the gradient-to-dark scrim pattern (Layer 0: expo-image, Layer 1: expo-linear-gradient vertical transparent to surfaceInverse, Layer 2: Text).",
+    "Do not use glassmorphism. The aesthetic relies on matte, paper-like surfaces and generous whitespace (shadow_tier 0, irregular organic layouts).",
+    "Avoid gamification tropes like streaks, loud completion alerts, or progress rings. Use gentle, slow, winding timelines for the Journey Map.",
+    "Ensure large tap targets (minimum 44x44pt) and highly readable text with WCAG AAA-like contrast compliance.",
+    "Wire up haptics softly for primary interactions using expo-haptics."
+  ]
+}
