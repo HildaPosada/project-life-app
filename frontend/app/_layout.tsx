@@ -7,6 +7,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
 import { AuthProvider, useAuth } from "@/src/context/AuthContext";
+import { EntitlementProvider } from "@/src/context/EntitlementContext";
 import { colors } from "@/src/theme";
 
 LogBox.ignoreAllLogs(true);
@@ -29,7 +30,7 @@ function AuthGate() {
     } else if (user && !user.onboarding_complete) {
       if (first !== "onboarding") router.replace("/onboarding");
     } else if (user && !inTabs) {
-      const allowedAuthed = ["(tabs)", "safety", "checkin", "journal-entry", "phase", "timeline-new", "upload-new", "session-log-new", "find-therapist", "menu", "memory", "reset-password"];
+      const allowedAuthed = ["(tabs)", "safety", "checkin", "journal-entry", "phase", "timeline-new", "upload-new", "session-log-new", "find-therapist", "menu", "memory", "reset-password", "paywall"];
       if (!allowedAuthed.includes(first)) router.replace("/(tabs)/home");
     }
   }, [user, session, loading, segments, router]);
@@ -59,7 +60,9 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.surface }}>
       <SafeAreaProvider>
         <AuthProvider>
-          <AuthGate />
+          <EntitlementProvider>
+            <AuthGate />
+          </EntitlementProvider>
         </AuthProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

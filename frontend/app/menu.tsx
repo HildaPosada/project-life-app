@@ -7,6 +7,7 @@ import * as Haptics from "expo-haptics";
 
 import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
 import { useAuth } from "@/src/context/AuthContext";
+import { useEntitlement } from "@/src/context/EntitlementContext";
 import { api } from "@/src/lib/api";
 
 // Profile — a personal sanctuary, not a settings page.
@@ -29,6 +30,7 @@ type Section = {
 export default function ProfileScreen() {
   const router = useRouter();
   const { user, logout } = useAuth();
+  const { isPremium, entitlement } = useEntitlement();
   const [dash, setDash] = useState<any | null>(null);
   const [stones, setStones] = useState<any[]>([]);
   const [phases, setPhases] = useState<any[]>([]);
@@ -84,7 +86,17 @@ export default function ProfileScreen() {
       label: "Account",
       items: [
         { key: "privacy", title: "Privacy", icon: "lock", subtitle: "Everything you write is yours" },
-        { key: "membership", title: "Membership", icon: "star", subtitle: "Manage subscription" },
+        {
+          key: "membership",
+          title: isPremium ? "Premium companion" : "Membership",
+          icon: "feather",
+          subtitle: isPremium
+            ? entitlement?.expires_at
+              ? `Renews ${new Date(entitlement.expires_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`
+              : "Every chapter is open to you"
+            : "Open the full journey",
+          route: "/paywall",
+        },
         { key: "signout", title: "Sign out", icon: "log-out", tone: "danger", onPress: logout },
       ],
     },

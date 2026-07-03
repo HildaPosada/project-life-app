@@ -1,7 +1,9 @@
 """Project Life – Trauma-Informed Emotional Intelligence App backend.
 
-Auth: Emergent-managed Google OAuth (session_token flow, 7-day expiry).
-Storage: MongoDB (all responses exclude _id).
+Auth: Supabase Auth (HS256 JWT verified locally with SUPABASE_JWT_SECRET).
+Storage: MongoDB (all responses exclude _id). Auth-only in Supabase; the
+FastAPI backend upserts our domain User row keyed by the Supabase `sub`
+on the first authenticated request.
 """
 
 import logging
@@ -11,7 +13,6 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import List, Optional, Literal, Dict, Any
 
-import httpx
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request
 from jose import jwt as jose_jwt, JWTError
@@ -33,7 +34,7 @@ SUPABASE_JWT_SECRET = os.environ.get("SUPABASE_JWT_SECRET", "")
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
 
-EMERGENT_SESSION_DATA_URL = ""
+EMERGENT_SESSION_DATA_URL = ""  # deprecated
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("project-life")
@@ -53,12 +54,6 @@ def new_id(prefix: str) -> str:
 # ---------------------------------------------------------------------------
 # Models
 # ---------------------------------------------------------------------------
-class SessionRequest(BaseModel):
-    """Deprecated. Left for compatibility with existing tests only."""
-
-    session_id: str
-
-
 class User(BaseModel):
     user_id: str
     email: str
@@ -72,6 +67,14 @@ class User(BaseModel):
     consent_accepted: bool = False
     onboarding_complete: bool = False
     current_phase: int = 0
+    # Entitlement (subscriptions). Single "premium" tier; source tracks
+    # whether it was granted via RevenueCat (iOS/Android IAP), Stripe (web),
+    # a promo, or the dev mock. `expires_at` is set for renewing subs.
+    entitlement: Literal["free", "premium"] = "free"
+    entitlement_source: Optional[Literal["mock", "revenuecat", "stripe", "promo"]] = None
+    entitlement_product: Optional[str] = None  # e.g. "pl_premium_monthly"
+    entitlement_expires_at: Optional[datetime] = None
+    trial_ends_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
 
@@ -85,9 +88,18 @@ class ProfileUpdate(BaseModel):
     onboarding_complete: Optional[bool] = None
 
 
-class AuthResponse(BaseModel):
-    session_token: str
-    user: User
+class Entitlement(BaseModel):
+    is_premium: bool
+    entitlement: Literal["free", "premium"]
+    source: Optional[str] = None
+    product: Optional[str] = None
+    expires_at: Optional[datetime] = None
+    trial_ends_at: Optional[datetime] = None
+
+
+class MockEntitlementRequest(BaseModel):
+    premium: bool
+    product: Optional[str] = None  # "pl_premium_monthly" | "pl_premium_annual"
 
 
 class JournalEntry(BaseModel):
@@ -302,6 +314,11 @@ async def get_current_user(authorization: Optional[str] = Header(None)) -> User:
         "consent_accepted": False,
         "onboarding_complete": False,
         "current_phase": 0,
+        "entitlement": "free",
+        "entitlement_source": None,
+        "entitlement_product": None,
+        "entitlement_expires_at": None,
+        "trial_ends_at": None,
         "created_at": now_utc(),
         "updated_at": now_utc(),
     }
@@ -335,6 +352,83 @@ async def update_profile(update: ProfileUpdate, user: User = Depends(get_current
     await db.users.update_one({"user_id": user.user_id}, {"$set": patch})
     doc = await db.users.find_one({"user_id": user.user_id}, {"_id": 0})
     return User(**doc)
+
+
+# ---------------------------------------------------------------------------
+# Entitlements (subscriptions)
+# ---------------------------------------------------------------------------
+def _entitlement_is_active(user: User) -> bool:
+    """Premium is active if entitlement=='premium' and either no expiry
+    or expiry is still in the future. Trial windows also count as premium."""
+    now = now_utc()
+
+    def _aware(dt: Optional[datetime]) -> Optional[datetime]:
+        if dt is None:
+            return None
+        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+    trial_end = _aware(user.trial_ends_at)
+    exp = _aware(user.entitlement_expires_at)
+
+    if user.entitlement != "premium":
+        # Grant premium during trial window even if entitlement flag hasn't
+        # been synced from RevenueCat/Stripe yet.
+        if trial_end and trial_end > now:
+            return True
+        return False
+    if exp and exp < now:
+        return False
+    return True
+
+
+@api.get("/entitlement", response_model=Entitlement)
+async def get_entitlement(user: User = Depends(get_current_user)):
+    is_premium = _entitlement_is_active(user)
+    return Entitlement(
+        is_premium=is_premium,
+        entitlement="premium" if is_premium else "free",
+        source=user.entitlement_source,
+        product=user.entitlement_product,
+        expires_at=user.entitlement_expires_at,
+        trial_ends_at=user.trial_ends_at,
+    )
+
+
+@api.post("/entitlement/mock", response_model=Entitlement)
+async def mock_entitlement(body: MockEntitlementRequest, user: User = Depends(get_current_user)):
+    """Dev-only entitlement toggle. Used to build & QA the paywall UI and
+    gating logic before RevenueCat / Stripe are wired end-to-end. Will be
+    replaced by webhook-driven sync in Sprint 2b."""
+    if body.premium:
+        patch = {
+            "entitlement": "premium",
+            "entitlement_source": "mock",
+            "entitlement_product": body.product or "pl_premium_monthly",
+            "entitlement_expires_at": now_utc() + timedelta(days=30),
+            "trial_ends_at": None,
+            "updated_at": now_utc(),
+        }
+    else:
+        patch = {
+            "entitlement": "free",
+            "entitlement_source": None,
+            "entitlement_product": None,
+            "entitlement_expires_at": None,
+            "trial_ends_at": None,
+            "updated_at": now_utc(),
+        }
+    await db.users.update_one({"user_id": user.user_id}, {"$set": patch})
+    doc = await db.users.find_one({"user_id": user.user_id}, {"_id": 0})
+    fresh = User(**doc)
+    is_premium = _entitlement_is_active(fresh)
+    return Entitlement(
+        is_premium=is_premium,
+        entitlement="premium" if is_premium else "free",
+        source=fresh.entitlement_source,
+        product=fresh.entitlement_product,
+        expires_at=fresh.entitlement_expires_at,
+        trial_ends_at=fresh.trial_ends_at,
+    )
 
 
 # ---------------------------------------------------------------------------

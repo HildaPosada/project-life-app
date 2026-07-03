@@ -18,6 +18,11 @@ export type User = {
   consent_accepted: boolean;
   onboarding_complete: boolean;
   current_phase: number;
+  entitlement?: "free" | "premium";
+  entitlement_source?: string | null;
+  entitlement_product?: string | null;
+  entitlement_expires_at?: string | null;
+  trial_ends_at?: string | null;
 };
 
 type AuthContextValue = {

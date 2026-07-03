@@ -7,6 +7,8 @@ import { useRouter, useFocusEffect } from "expo-router";
 import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
 import { api } from "@/src/lib/api";
 import { useAuth } from "@/src/context/AuthContext";
+import { useEntitlement } from "@/src/context/EntitlementContext";
+import { PremiumGate } from "@/src/components/PremiumGate";
 
 const CATEGORY_ICON: Record<string, string> = {
   "Breathing": "wind",
@@ -18,6 +20,7 @@ const CATEGORY_ICON: Record<string, string> = {
 export default function LibraryScreen() {
   const router = useRouter();
   const { user } = useAuth();
+  const { isPremium } = useEntitlement();
   const [practices, setPractices] = useState<any[]>([]);
   const [uploads, setUploads] = useState<any[]>([]);
   const [activeCat, setActiveCat] = useState<string>("All");
@@ -43,48 +46,59 @@ export default function LibraryScreen() {
         <Text style={styles.sub}>Somatic, grounding, and therapist uploads.</Text>
       </View>
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.chipsRow}
-        style={styles.chipScroll}
-      >
-        {categories.map((c) => (
-          <Pressable
-            key={c}
-            testID={`library-chip-${c}`}
-            onPress={() => setActiveCat(c)}
-            style={[styles.chip, activeCat === c && styles.chipActive]}
-          >
-            <Text style={[styles.chipText, activeCat === c && styles.chipTextActive]}>{c}</Text>
-          </Pressable>
-        ))}
-      </ScrollView>
-
       <ScrollView contentContainerStyle={styles.body}>
-        {filtered.map((p) => {
-          const locked = p.unlock_phase > currentPhase;
-          return (
-            <View key={p.practice_id} style={[styles.practice, locked && styles.practiceLocked]} testID={`practice-${p.practice_id}`}>
-              <View style={styles.pIcon}>
-                <Feather
-                  name={(CATEGORY_ICON[p.category] as any) ?? "circle"}
-                  size={18}
-                  color={colors.onBrandTertiary}
-                />
-              </View>
-              <View style={{ flex: 1 }}>
-                <View style={styles.pTop}>
-                  <Text style={styles.pTitle}>{p.title}</Text>
-                  {locked ? <Feather name="lock" size={14} color={colors.onSurfaceTertiary} /> : null}
+        {isPremium ? (
+          <>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.chipsRowInner}
+              style={styles.chipScroll}
+            >
+              {categories.map((c) => (
+                <Pressable
+                  key={c}
+                  testID={`library-chip-${c}`}
+                  onPress={() => setActiveCat(c)}
+                  style={[styles.chip, activeCat === c && styles.chipActive]}
+                >
+                  <Text style={[styles.chipText, activeCat === c && styles.chipTextActive]}>{c}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+
+            {filtered.map((p) => {
+              const locked = p.unlock_phase > currentPhase;
+              return (
+                <View key={p.practice_id} style={[styles.practice, locked && styles.practiceLocked]} testID={`practice-${p.practice_id}`}>
+                  <View style={styles.pIcon}>
+                    <Feather
+                      name={(CATEGORY_ICON[p.category] as any) ?? "circle"}
+                      size={18}
+                      color={colors.onBrandTertiary}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <View style={styles.pTop}>
+                      <Text style={styles.pTitle}>{p.title}</Text>
+                      {locked ? <Feather name="lock" size={14} color={colors.onSurfaceTertiary} /> : null}
+                    </View>
+                    <Text style={styles.pMeta}>{p.category} · {p.duration_min} min</Text>
+                    <Text style={styles.pDesc} numberOfLines={2}>{p.description}</Text>
+                    {locked && <Text style={styles.pLock}>Unlocks in Phase {p.unlock_phase}</Text>}
+                  </View>
                 </View>
-                <Text style={styles.pMeta}>{p.category} · {p.duration_min} min</Text>
-                <Text style={styles.pDesc} numberOfLines={2}>{p.description}</Text>
-                {locked && <Text style={styles.pLock}>Unlocks in Phase {p.unlock_phase}</Text>}
-              </View>
-            </View>
-          );
-        })}
+              );
+            })}
+          </>
+        ) : (
+          <PremiumGate
+            eyebrow="Practices"
+            title="The full library opens with Premium."
+            body="Somatic exercises, breathing patterns, grounding practices, and EMDR pre-work — a growing library, tended slowly, available whenever you need to return to the body."
+            cta="See what unfolds"
+          />
+        )}
 
         <View style={styles.uploadsBlock}>
           <View style={styles.uploadsHead}>
@@ -130,6 +144,7 @@ const styles = StyleSheet.create({
   sub: { fontFamily: fonts.body, fontSize: fontSize.base, color: colors.onSurfaceSecondary, marginTop: 2 },
   chipScroll: { maxHeight: 56 },
   chipsRow: { paddingHorizontal: spacing.xl, gap: spacing.sm, paddingVertical: spacing.md, alignItems: "center" },
+  chipsRowInner: { gap: spacing.sm, paddingVertical: spacing.md, alignItems: "center", marginBottom: spacing.sm },
   chip: { flexShrink: 0, paddingHorizontal: spacing.lg, paddingVertical: 8, borderRadius: radius.pill, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, height: 36, justifyContent: "center" },
   chipActive: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
   chipText: { fontFamily: fonts.body, fontSize: fontSize.base, color: colors.onSurface },

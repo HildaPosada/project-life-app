@@ -7,6 +7,7 @@ import * as Haptics from "expo-haptics";
 
 import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
 import { api } from "@/src/lib/api";
+import { useEntitlement } from "@/src/context/EntitlementContext";
 
 // Healing Journey — chapters, not a progress tracker.
 // Current chapter is highlighted. Future chapters remain visible but
@@ -39,6 +40,7 @@ const ROMAN = ["I", "II", "III", "IV"];
 
 export default function JourneyScreen() {
   const router = useRouter();
+  const { isPremium } = useEntitlement();
   const [phases, setPhases] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -131,24 +133,64 @@ export default function JourneyScreen() {
         {ahead.length > 0 && (
           <View style={styles.block}>
             <Text style={styles.blockLabel}>Chapters ahead</Text>
-            {ahead.map((p) => (
-              <Pressable
-                key={p.phase}
-                onPress={() => openChapter(p)}
-                style={styles.aheadRow}
-                testID={`journey-ahead-${p.phase}`}
-              >
-                <Text style={styles.aheadNum}>{ROMAN[p.phase]}</Text>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.aheadTitle}>{p.title}</Text>
-                  <Text style={styles.aheadPurpose} numberOfLines={2}>
-                    {CHAPTER_STORY[p.phase]?.purpose}
-                  </Text>
-                </View>
-                <Feather name="chevron-right" size={16} color={colors.onSurfaceTertiary} />
-              </Pressable>
-            ))}
+            {ahead.map((p) => {
+              const requiresPremium = !isPremium && p.phase >= 2;
+              return (
+                <Pressable
+                  key={p.phase}
+                  onPress={() => {
+                    if (requiresPremium) {
+                      Haptics.selectionAsync().catch(() => {});
+                      router.push("/paywall");
+                      return;
+                    }
+                    openChapter(p);
+                  }}
+                  style={styles.aheadRow}
+                  testID={`journey-ahead-${p.phase}`}
+                >
+                  <Text style={styles.aheadNum}>{ROMAN[p.phase]}</Text>
+                  <View style={{ flex: 1 }}>
+                    <View style={styles.aheadTitleRow}>
+                      <Text style={styles.aheadTitle}>{p.title}</Text>
+                      {requiresPremium ? (
+                        <View style={styles.premiumTag}>
+                          <Feather name="feather" size={10} color={colors.onAccent} />
+                          <Text style={styles.premiumTagText}>Premium</Text>
+                        </View>
+                      ) : null}
+                    </View>
+                    <Text style={styles.aheadPurpose} numberOfLines={2}>
+                      {CHAPTER_STORY[p.phase]?.purpose}
+                    </Text>
+                  </View>
+                  <Feather name="chevron-right" size={16} color={colors.onSurfaceTertiary} />
+                </Pressable>
+              );
+            })}
           </View>
+        )}
+
+        {!isPremium && (
+          <Pressable
+            onPress={() => {
+              Haptics.selectionAsync().catch(() => {});
+              router.push("/paywall");
+            }}
+            style={({ pressed }) => [styles.premiumInvite, pressed && { opacity: 0.94 }]}
+            testID="journey-premium-invite"
+          >
+            <Text style={styles.premiumInviteEyebrow}>A quiet invitation</Text>
+            <Text style={styles.premiumInviteTitle}>The full arc opens with Premium.</Text>
+            <Text style={styles.premiumInviteBody}>
+              Your first chapter is free, always. When you are ready to walk further, the remaining
+              seasons are waiting.
+            </Text>
+            <View style={styles.premiumInviteRow}>
+              <Text style={styles.premiumInviteCta}>See what unfolds</Text>
+              <Feather name="arrow-right" size={16} color={colors.brandPrimary} />
+            </View>
+          </Pressable>
         )}
 
         <Text style={styles.closing}>Move gently. The story will keep.</Text>
@@ -188,8 +230,25 @@ const styles = StyleSheet.create({
 
   aheadRow: { flexDirection: "row", alignItems: "flex-start", paddingVertical: spacing.md, borderTopWidth: 1, borderTopColor: colors.divider, opacity: 0.7 },
   aheadNum: { fontFamily: fonts.serif, fontSize: fontSize.xl, color: colors.onSurfaceTertiary, width: 40, fontWeight: "500" },
+  aheadTitleRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, flexWrap: "wrap" },
   aheadTitle: { fontFamily: fonts.serif, fontSize: fontSize.lg, color: colors.onSurface },
   aheadPurpose: { fontFamily: fonts.body, fontSize: fontSize.sm, color: colors.onSurfaceSecondary, marginTop: 4, lineHeight: 20 },
+  premiumTag: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: colors.accent, paddingHorizontal: 8, paddingVertical: 2, borderRadius: radius.pill },
+  premiumTagText: { fontFamily: fonts.body, fontSize: 10, color: colors.onAccent, letterSpacing: 1, textTransform: "uppercase" },
+
+  premiumInvite: {
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.accent,
+    borderRadius: radius.md,
+    padding: spacing.xl,
+    marginTop: spacing.md,
+  },
+  premiumInviteEyebrow: { fontFamily: fonts.body, fontSize: fontSize.xs, color: colors.onSurfaceTertiary, letterSpacing: 2, textTransform: "uppercase", marginBottom: spacing.sm },
+  premiumInviteTitle: { fontFamily: fonts.serif, fontSize: fontSize.xxl, color: colors.onSurface, lineHeight: 32, fontWeight: "500" },
+  premiumInviteBody: { fontFamily: fonts.body, fontSize: fontSize.base, color: colors.onSurfaceSecondary, marginTop: spacing.md, lineHeight: 22 },
+  premiumInviteRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginTop: spacing.lg },
+  premiumInviteCta: { fontFamily: fonts.body, fontSize: fontSize.base, color: colors.brandPrimary, fontWeight: "500", letterSpacing: 0.3 },
 
   closing: { fontFamily: fonts.serif, fontSize: fontSize.base, color: colors.onSurfaceTertiary, fontStyle: "italic", textAlign: "center", marginTop: spacing.xxl },
 });

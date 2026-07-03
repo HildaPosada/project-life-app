@@ -8,6 +8,8 @@ import * as Haptics from "expo-haptics";
 import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
 import { api } from "@/src/lib/api";
 import { useAuth } from "@/src/context/AuthContext";
+import { useEntitlement } from "@/src/context/EntitlementContext";
+import { PremiumGate } from "@/src/components/PremiumGate";
 
 const PHASE_DESCRIPTION: Record<number, { blurb: string; activities: string[] }> = {
   0: {
@@ -33,6 +35,7 @@ export default function PhaseDetailScreen() {
   const phaseNum = parseInt(id ?? "0", 10);
   const router = useRouter();
   const { refresh } = useAuth();
+  const { isPremium } = useEntitlement();
   const [phase, setPhase] = useState<any | null>(null);
   const [memories, setMemories] = useState<any[]>([]);
   const [sessionLogs, setSessionLogs] = useState<any[]>([]);
@@ -83,6 +86,8 @@ export default function PhaseDetailScreen() {
   const meta = PHASE_DESCRIPTION[phaseNum] ?? { blurb: "", activities: [] };
   const isCurrent = phase.is_current;
   const canAdvance = isCurrent && phase.progress_pct >= 100 && phaseNum < 3;
+  const isPremiumChapter = phaseNum >= 2;
+  const gated = isPremiumChapter && !isPremium;
 
   return (
     <SafeAreaView style={styles.root} edges={["top", "left", "right"]} testID={`phase-screen-${phaseNum}`}>
@@ -107,96 +112,107 @@ export default function PhaseDetailScreen() {
 
           <Text style={styles.blurb}>{meta.blurb}</Text>
 
-          <View style={styles.progressCard}>
-            <View style={styles.progressTrack}>
-              <View style={[styles.progressFill, { width: `${phase.progress_pct}%` }]} />
-            </View>
-            <Text style={styles.progressText}>{phase.progress_pct}% along</Text>
-          </View>
+          {gated ? (
+            <PremiumGate
+              eyebrow={`Chapter ${phase.phase}`}
+              title="This season opens with Premium."
+              body="Your first chapter is free. When you're ready to continue the journey, Premium opens every chapter beyond this — with no pressure, no rush."
+              cta="See what unfolds"
+            />
+          ) : (
+            <>
+              <View style={styles.progressCard}>
+                <View style={styles.progressTrack}>
+                  <View style={[styles.progressFill, { width: `${phase.progress_pct}%` }]} />
+                </View>
+                <Text style={styles.progressText}>{phase.progress_pct}% along</Text>
+              </View>
 
-          <Text style={styles.sectionTitle}>What this phase includes</Text>
-          {meta.activities.map((a) => (
-            <View key={a} style={styles.activityRow}>
-              <Feather name="check-circle" size={16} color={colors.brandPrimary} />
-              <Text style={styles.activityText}>{a}</Text>
-            </View>
-          ))}
-          <Text style={styles.sectionTitle}>Requirements</Text>
-          {phase.requirements.map((r: string) => (
-            <View key={r} style={styles.activityRow}>
-              <Feather name="circle" size={12} color={colors.onSurfaceSecondary} />
-              <Text style={styles.activityText}>{r}</Text>
-            </View>
-          ))}
-
-          {phaseNum === 2 && phase.is_unlocked && (
-            <View style={styles.subBlock}>
-              <Text style={styles.sectionTitle}>Memories bank</Text>
-              <Text style={styles.subHint}>Encrypted, private, never shared. For discussion in EMDR sessions.</Text>
-              <TextInput
-                testID="memory-title-input"
-                value={memTitle}
-                onChangeText={setMemTitle}
-                placeholder="Title / reference"
-                placeholderTextColor={colors.onSurfaceTertiary}
-                style={styles.input}
-              />
-              <TextInput
-                testID="memory-desc-input"
-                value={memDesc}
-                onChangeText={setMemDesc}
-                placeholder="Description, body sensations, target beliefs"
-                placeholderTextColor={colors.onSurfaceTertiary}
-                style={[styles.input, styles.textArea]}
-                multiline
-              />
-              <Pressable testID="memory-add-button" onPress={addMemory} style={styles.smallPrimary}>
-                <Feather name="plus" size={16} color={colors.onBrandPrimary} />
-                <Text style={styles.smallPrimaryText}>Add memory</Text>
-              </Pressable>
-              {memories.map((m) => (
-                <View key={m.memory_id} style={styles.memCard} testID={`memory-${m.memory_id}`}>
-                  <Text style={styles.memTitle}>{m.title}</Text>
-                  <Text style={styles.memDesc}>{m.description}</Text>
+              <Text style={styles.sectionTitle}>What this phase includes</Text>
+              {meta.activities.map((a) => (
+                <View key={a} style={styles.activityRow}>
+                  <Feather name="check-circle" size={16} color={colors.brandPrimary} />
+                  <Text style={styles.activityText}>{a}</Text>
                 </View>
               ))}
-            </View>
-          )}
-
-          {phaseNum === 3 && phase.is_unlocked && (
-            <View style={styles.subBlock}>
-              <Text style={styles.sectionTitle}>Session logs</Text>
-              <Pressable
-                testID="session-log-add-button"
-                onPress={() => router.push("/session-log-new")}
-                style={styles.smallPrimary}
-              >
-                <Feather name="plus" size={16} color={colors.onBrandPrimary} />
-                <Text style={styles.smallPrimaryText}>Add session log</Text>
-              </Pressable>
-              {sessionLogs.map((s) => (
-                <View key={s.log_id} style={styles.memCard}>
-                  <Text style={styles.memTitle}>{s.session_type} · {new Date(s.date).toLocaleDateString()}</Text>
-                  {s.insights ? <Text style={styles.memDesc}>{s.insights}</Text> : null}
+              <Text style={styles.sectionTitle}>Requirements</Text>
+              {phase.requirements.map((r: string) => (
+                <View key={r} style={styles.activityRow}>
+                  <Feather name="circle" size={12} color={colors.onSurfaceSecondary} />
+                  <Text style={styles.activityText}>{r}</Text>
                 </View>
               ))}
-            </View>
-          )}
 
-          {isCurrent && canAdvance && (
-            <Pressable
-              testID="phase-advance-button"
-              onPress={advance}
-              disabled={advancing}
-              style={styles.advanceBtn}
-            >
-              {advancing ? <ActivityIndicator color={colors.onBrandPrimary} /> : (
-                <>
-                  <Feather name="arrow-right" size={18} color={colors.onBrandPrimary} />
-                  <Text style={styles.advanceText}>Move to Phase {phase.phase + 1}</Text>
-                </>
+              {phaseNum === 2 && phase.is_unlocked && (
+                <View style={styles.subBlock}>
+                  <Text style={styles.sectionTitle}>Memories bank</Text>
+                  <Text style={styles.subHint}>Encrypted, private, never shared. For discussion in EMDR sessions.</Text>
+                  <TextInput
+                    testID="memory-title-input"
+                    value={memTitle}
+                    onChangeText={setMemTitle}
+                    placeholder="Title / reference"
+                    placeholderTextColor={colors.onSurfaceTertiary}
+                    style={styles.input}
+                  />
+                  <TextInput
+                    testID="memory-desc-input"
+                    value={memDesc}
+                    onChangeText={setMemDesc}
+                    placeholder="Description, body sensations, target beliefs"
+                    placeholderTextColor={colors.onSurfaceTertiary}
+                    style={[styles.input, styles.textArea]}
+                    multiline
+                  />
+                  <Pressable testID="memory-add-button" onPress={addMemory} style={styles.smallPrimary}>
+                    <Feather name="plus" size={16} color={colors.onBrandPrimary} />
+                    <Text style={styles.smallPrimaryText}>Add memory</Text>
+                  </Pressable>
+                  {memories.map((m) => (
+                    <View key={m.memory_id} style={styles.memCard} testID={`memory-${m.memory_id}`}>
+                      <Text style={styles.memTitle}>{m.title}</Text>
+                      <Text style={styles.memDesc}>{m.description}</Text>
+                    </View>
+                  ))}
+                </View>
               )}
-            </Pressable>
+
+              {phaseNum === 3 && phase.is_unlocked && (
+                <View style={styles.subBlock}>
+                  <Text style={styles.sectionTitle}>Session logs</Text>
+                  <Pressable
+                    testID="session-log-add-button"
+                    onPress={() => router.push("/session-log-new")}
+                    style={styles.smallPrimary}
+                  >
+                    <Feather name="plus" size={16} color={colors.onBrandPrimary} />
+                    <Text style={styles.smallPrimaryText}>Add session log</Text>
+                  </Pressable>
+                  {sessionLogs.map((s) => (
+                    <View key={s.log_id} style={styles.memCard}>
+                      <Text style={styles.memTitle}>{s.session_type} · {new Date(s.date).toLocaleDateString()}</Text>
+                      {s.insights ? <Text style={styles.memDesc}>{s.insights}</Text> : null}
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              {isCurrent && canAdvance && (
+                <Pressable
+                  testID="phase-advance-button"
+                  onPress={advance}
+                  disabled={advancing}
+                  style={styles.advanceBtn}
+                >
+                  {advancing ? <ActivityIndicator color={colors.onBrandPrimary} /> : (
+                    <>
+                      <Feather name="arrow-right" size={18} color={colors.onBrandPrimary} />
+                      <Text style={styles.advanceText}>Move to Phase {phase.phase + 1}</Text>
+                    </>
+                  )}
+                </Pressable>
+              )}
+            </>
           )}
         </ScrollView>
       </KeyboardAvoidingView>

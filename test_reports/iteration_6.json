@@ -1,0 +1,34 @@
+{
+  "summary": "Sprint 2a entitlement / paywall backend gating verified. Added /app/backend/tests/test_entitlements.py with 18 tests covering auth guards, free defaults on new users, mock unlock (annual + monthly + default product), downgrade/clear, persistence across GET, /auth/me entitlement surface, backward-compat with legacy Mongo docs (no entitlement fields), expiry logic, active-trial fallback, and legacy endpoint regression. Full suite: 38/38 pass (18 new + 20 Sprint 1 regression). No modifications to server.py — only test additions. No _id leaks observed in any entitlement response.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_entitlements.py",
+    "/app/test_reports/pytest/iteration_6_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is ~1120 lines — approaching the 700-line split threshold. Consider modularizing (auth/, entitlements/, journal/, dashboard/) in a future refactor. Not blocking for Sprint 2a.",
+    "MockEntitlementRequest.product is Optional[str] with no server-side validation of allowed values. Currently accepts any product string. Consider Literal['pl_premium_monthly','pl_premium_annual'] or a whitelist check before wiring real IAP.",
+    "/api/entitlement/mock has no rate limiting or dev-only guard. Since spec calls it a 'dev endpoint', consider gating behind an env flag (e.g. ALLOW_MOCK_ENTITLEMENT) before shipping to prod so users cannot self-unlock premium via the public API.",
+    "_entitlement_is_active correctly handles TZ-naive datetimes coming back from Mongo — good defensive coding.",
+    "User model uses Pydantic v2 defaults for new entitlement fields, so legacy Mongo docs deserialize cleanly (verified by TestEntitlementBackwardCompat)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_entitlements.py (new)"
+  ],
+  "success_rate": {"backend": "100% (38/38)", "frontend": "not tested (backend only)"},
+  "seed_data_creation": "Per-test ephemeral Mongo user rows keyed on random UUID subs, each cleaned up in a try/finally teardown. QA_SUB shared fixture continues to be wiped by conftest.wipe_qa_data.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Sprint 2a is green end-to-end on the backend. When Sprint 2b (real RevenueCat / Stripe webhook sync) lands, add tests for: (a) webhook signature validation, (b) idempotency on repeated webhook deliveries, (c) product-to-entitlement mapping, (d) removal / disabling of /api/entitlement/mock (or its env-flag gate). Also revisit MockEntitlementRequest.product validation and consider Literal-typing it. UI paywall gating (Sanctuary paywall screen) was NOT tested — request UI review when frontend work is ready.",
+  "rca_of_issue": "N/A — all tests pass. One transient test-authoring bug in the annual-unlock assertion (naive vs aware datetime subtraction) was fixed in-place; not an app issue."
+}

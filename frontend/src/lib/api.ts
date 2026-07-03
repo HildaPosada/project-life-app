@@ -84,4 +84,9 @@ export const api = {
 
   memoryPath: () => request<{ stones: any[] }>("/memory-path"),
   memoryStone: (id: string) => request<any>(`/memory-path/${id}`),
+
+  // Entitlements
+  getEntitlement: () => request<any>("/entitlement"),
+  mockEntitlement: (body: { premium: boolean; product?: string }) =>
+    request<any>("/entitlement/mock", { method: "POST", body }),
 };
