@@ -1,0 +1,51 @@
+{
+  "summary": "Iteration 4 (backend-only). Added 14 targeted tests for two new endpoints — PUT /api/journal/{entry_id} (autosave-friendly update) and GET /api/journal/prompt — in /app/backend/tests/test_journal_autosave_and_prompt.py. Full backend suite now 64/64 PASSED (50 carried over + 14 new). Per-test autouse fixture wipes both QA users' activity collections and resets user_qatest (current_phase=0, consent_accepted=False) so counts start deterministic; a second seeded QA user (user_qatest_b / qa-token-xyz-b) is also created/torn down per test for cross-user isolation. Coverage: (A) PUT /api/journal/{entry_id}: 401 without bearer; 404 for nonexistent id; full-field update (title/body/mood_word/mood_score) preserves entry_id and does NOT overwrite created_at (verified after read-back via GET /api/journal); partial update with only {\"body\":\"...\"} updates body only and leaves title/mood_word/mood_score untouched; cross-user attempt returns 404 (NOT 403 — existence is not leaked) and the owner's entry is unchanged. (B) GET /api/journal/prompt: 401 without bearer; response shape {prompt: string, recent_mood: string|null}; recent_mood is null when user has no entries; after creating a journal entry with mood_word='Tender', recent_mood == 'Tender'; two back-to-back calls in the same day return identical prompt (deterministic). (C) Regression sanity (5 tests): POST /api/journal still returns a valid JournalEntry with j_ prefixed entry_id; GET /api/dashboard still returns the `context` object with all six sub-keys (days_since_last_activity, active_days_count, is_first_visit, is_returning, milestone_today, milestone_title); GET /api/memory-path still returns stones (empty at start; 1 after first journal with title 'The first stone'); GET /api/auth/me with valid bearer returns 200 and the correct user; GET /api/phases returns exactly 4 phases [0,1,2,3]. Verified NO `_id` leaks recursively across every response. Google OAuth remains MOCKED via direct MongoDB session seeding (conftest.py qa_user fixture + a per-test user B fixture inside the new file).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "PUT /api/journal/{entry_id}", "issue": "The response `created_at` string differs in FORMAT between POST (in-memory: microsecond precision + trailing 'Z') and PUT/GET (Mongo read-back: millisecond precision, no 'Z', naive-looking). Same instant, but a naive string equality on created_at fails. Test compares as parsed datetimes to work around it. Consider forcing timezone-aware serialization consistently (e.g., ensure the model_config or a custom JSON encoder always emits tz-aware ISO with 'Z') so clients aren't tempted to string-compare timestamps."},
+    {"endpoint": "PUT /api/journal/{entry_id}", "issue": "Signature uses `body: JournalCreate` where JournalCreate has `body: str` as a required field. That means a genuine autosave that wants to update ONLY title or ONLY mood without touching `body` will 422. The spec asked for partial-update with only body, which works today, but a symmetric `mood_word`-only or `title`-only partial update is impossible. Recommend a dedicated JournalUpdate model with all fields Optional (still using exclude_unset), or accepting the same JournalCreate but making `body` Optional there too."},
+    {"endpoint": "PUT /api/journal/{entry_id}", "issue": "No response_model_exclude_none / no explicit strip of client-supplied `entry_id`, `user_id`, or `created_at` fields in the body. Currently they're just ignored because JournalCreate doesn't declare them — safe today, but if JournalCreate is ever expanded, a malicious client could try to send `user_id` and cause bleed-through. Consider `model_config = ConfigDict(extra='forbid')` on JournalCreate."},
+    {"endpoint": "GET /api/journal/prompt", "issue": "Determinism uses `user.user_id.__hash__()`, which is Python's built-in str hash and is randomised per-process (PYTHONHASHSEED). It's stable within one backend process, but a backend restart could shift a user's daily prompt mid-day. If cross-restart determinism is desired, use a stable hash (hashlib.sha256(user_id).digest())."},
+    {"endpoint": "GET /api/journal/prompt", "issue": "Time-of-day pool selection is UTC only (`now_utc().hour`); a user in PT at 8pm local sees a NIGHT-pool prompt because UTC is 04:00. Acceptable for MVP but worth noting for a trauma-informed product where evening vs morning tone matters."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_journal_autosave_and_prompt.py",
+    "/app/backend/tests/test_memory_path_and_context.py",
+    "/app/backend/tests/test_project_life_backend.py",
+    "/app/backend/tests/conftest.py",
+    "/app/test_reports/pytest/iteration_4_results.xml"
+  ],
+  "action_items": [
+    "(Optional / consistency) Normalise datetime serialization in POST vs PUT/GET responses for /api/journal so `created_at` is byte-identical across create-then-read flows. Recommend a global datetime encoder that always emits tz-aware ISO with trailing 'Z'.",
+    "(Optional / API ergonomics) Introduce a dedicated JournalUpdate Pydantic model with all fields Optional (title/body/mood_word/mood_score), or make `body` Optional on JournalCreate when reused for PUT, so autosave can update `mood_word` alone or `title` alone without a 422.",
+    "(Optional / hardening) Add `model_config = ConfigDict(extra='forbid')` on JournalCreate to reject unknown fields in autosave payloads.",
+    "(Optional / determinism) Replace `user.user_id.__hash__()` in /api/journal/prompt with a stable hash (e.g., hashlib.sha256) so a backend restart never shifts the day's prompt mid-day.",
+    "(Optional / trauma-informed tone) Consider using the user's local timezone (if we store one) rather than UTC hour to pick MORNING/MIDDAY/EVENING/NIGHT pools.",
+    "(Carryover from iter 3, still valid) server.py now ~1030 lines and _compute_memory_stones() is called from both /memory-path and /dashboard. Recommend splitting into routers."
+  ],
+  "critical_code_review_comments": [
+    "server.py:437 — PUT /api/journal/{entry_id} correctly scopes both the read and the update by {user_id, entry_id}, which is what makes the cross-user 404 possible without a separate ownership check. Nicely done.",
+    "server.py:444 — patch uses body.model_dump(exclude_unset=True), so `null` values from the client would explicitly overwrite fields. Given JournalCreate defaults are all `= None`, an autosave payload like {'body':'x','mood_word':null} would clear mood_word. Consider filtering `None` OR documenting that null is a valid 'clear' signal.",
+    "server.py:480 — /api/journal/prompt uses str.__hash__() which is per-process-random. Consider hashlib for cross-restart stability.",
+    "server.py:497 — recent_mood correctly derived from most recent journal entry via sort=[('created_at', -1)]; matches spec.",
+    "server.py — created_at serialization inconsistency between POST (in-memory tz-aware) and PUT (Mongo read-back naive+ms-truncated) is a genuine cross-cutting concern that will bite other endpoints (weekly_checkins, memories, session_logs all have the same shape). Non-blocking but worth a global fix.",
+    "No new deprecated Expo/RN packages introduced (backend-only iteration)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_journal_autosave_and_prompt.py (NEW — 14 tests, uses autouse cleanup + second QA user fixture for cross-user isolation)"
+  ],
+  "success_rate": {"backend": "100% (64/64 full suite; 14/14 new iteration-4 tests)", "frontend": "not_tested_by_design"},
+  "seed_data_creation": "Reused conftest.py qa_user fixture (user_qatest / qa-token-xyz). New file adds an autouse per-test fixture that (1) wipes ACTIVITY_COLLS for both QA users, (2) resets user_qatest to a clean profile state, and (3) creates+tears-down a second QA user (user_qatest_b / qa-token-xyz-b) for cross-user isolation tests.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend green at 64/64. The new file /app/backend/tests/test_journal_autosave_and_prompt.py is idempotent and includes a datetime helper (`_dt_equal`) that compares ISO strings at ms precision, tolerant of the tz-aware vs naive serialization inconsistency between POST and PUT/GET. If the main agent normalises datetime serialization, you can simplify to string equality. Google OAuth remains MOCKED — real browser flow still cannot be automated in this container.",
+  "rca_of_issue": "No bugs blocked spec acceptance. One observable-but-non-blocking behaviour: POST /api/journal returns `created_at` as a microsecond-precision, tz-aware ISO ending in 'Z' (because it's the fresh in-memory `datetime.now(timezone.utc)`), whereas PUT /api/journal/{entry_id} and GET /api/journal read the value back from Mongo, which stores datetimes at millisecond precision and drops tzinfo — so the response is a naive-looking ISO with no 'Z'. The value represents the same instant, but clients doing naive string equality will see a mismatch. Reproducible by: POST /api/journal -> capture created_at -> PUT /api/journal/{id} -> compare created_at strings. Mitigation: normalise datetime encoding at the Pydantic layer (json_encoders or a model_config with a custom serializer) so all datetimes come out tz-aware with a trailing 'Z' regardless of source."
+}

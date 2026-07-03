@@ -56,6 +56,9 @@ export const api = {
   listJournal: () => request<any[]>("/journal"),
   createJournal: (body: Record<string, unknown>) =>
     request<any>("/journal", { method: "POST", body }),
+  updateJournal: (id: string, body: Record<string, unknown>) =>
+    request<any>(`/journal/${id}`, { method: "PUT", body }),
+  journalPrompt: () => request<{ prompt: string; recent_mood: string | null }>("/journal/prompt"),
   journalInsights: () => request<any>("/journal/insights"),
 
   listWeeklyCheckins: () => request<any[]>("/checkins/weekly"),

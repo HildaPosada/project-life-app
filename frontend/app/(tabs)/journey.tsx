@@ -1,144 +1,195 @@
 import { useCallback, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, Image, RefreshControl } from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
+import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { useRouter, useFocusEffect } from "expo-router";
+import * as Haptics from "expo-haptics";
 
 import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
 import { api } from "@/src/lib/api";
 
+// Healing Journey — chapters, not a progress tracker.
+// Current chapter is highlighted. Future chapters remain visible but
+// understated. Completed chapters become "seasons walked".
+
+const CHAPTER_STORY: Record<number, { purpose: string; experience: string; next: string }> = {
+  0: {
+    purpose: "To settle, before beginning. To learn where the doors are.",
+    experience: "Curiosity, a little nervousness, moments of slowing down.",
+    next: "Set your safety net. Read one gentle prompt.",
+  },
+  1: {
+    purpose: "To build a steady practice of noticing. Weekly reflection beside your therapist.",
+    experience: "Familiar patterns become visible. Emotions gain vocabulary.",
+    next: "A single weekly reflection — anytime this week.",
+  },
+  2: {
+    purpose: "To reprocess specific memories with your therapist. Only with their approval.",
+    experience: "Some sessions feel heavy. Others feel lighter than expected. Both are welcome.",
+    next: "Upload your therapist's approval. Log one memory.",
+  },
+  3: {
+    purpose: "To integrate somatic and — if part of your care — ketamine work into daily life.",
+    experience: "The body speaks more clearly. Meaning arrives slowly, then all at once.",
+    next: "Log one integration session. Try a somatic practice.",
+  },
+};
+
+const ROMAN = ["I", "II", "III", "IV"];
+
 export default function JourneyScreen() {
   const router = useRouter();
   const [phases, setPhases] = useState<any[]>([]);
-  const [events, setEvents] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const [p, e] = await Promise.all([api.listPhases(), api.listTimeline()]);
-      setPhases(p);
-      setEvents(e);
+      setPhases(await api.listPhases());
     } catch { /* ignore */ }
   }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  return (
-    <View style={styles.root} testID="journey-screen">
-      <Image
-        source={{ uri: "https://images.unsplash.com/photo-1629106279285-a56fded8cda8?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjY2NzF8MHwxfHNlYXJjaHwxfHxtaW5pbWFsaXN0JTIwbmF0dXJlJTIwYWVzdGhldGljJTIwZm9yZXN0JTIwc29mdCUyMGxpZ2h0fGVufDB8fHx8MTc4MzA2NjMxN3ww&ixlib=rb-4.1.0&q=85" }}
-        style={styles.hero}
-      />
-      <LinearGradient colors={["rgba(249,248,245,0.6)", "rgba(249,248,245,0.95)", colors.surface]} style={styles.scrim} />
-      <SafeAreaView style={{ flex: 1 }} edges={["top", "left", "right"]}>
-        <View style={styles.header}>
-          <Text style={styles.title}>Your journey</Text>
-          <Text style={styles.sub}>A 2.2-year unhurried arc.</Text>
-        </View>
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await load();
+    setRefreshing(false);
+  };
 
-        <ScrollView
-          contentContainerStyle={styles.body}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await load(); setRefreshing(false); }} tintColor={colors.brandPrimary} />}
-        >
-          <View style={styles.timeline}>
-            {phases.map((p, idx) => (
+  const openChapter = (p: any) => {
+    Haptics.selectionAsync().catch(() => {});
+    router.push(`/phase/${p.phase}`);
+  };
+
+  const walked = phases.filter((p) => p.phase < (phases.find((c) => c.is_current)?.phase ?? 0));
+  const current = phases.find((p) => p.is_current);
+  const ahead = phases.filter((p) => !p.is_current && p.phase > (current?.phase ?? -1));
+
+  return (
+    <SafeAreaView style={styles.root} edges={["top", "left", "right"]} testID="journey-screen">
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.brandPrimary} />}
+        showsVerticalScrollIndicator={false}
+      >
+        <Text style={styles.eyebrow}>A long, unhurried arc</Text>
+        <Text style={styles.title}>Your healing{"\n"}journey.</Text>
+        <Text style={styles.subtitle}>
+          Four seasons, walked in sequence. Not a race, not a checklist — a story.
+        </Text>
+
+        {walked.length > 0 && (
+          <View style={styles.block}>
+            <Text style={styles.blockLabel}>Seasons walked</Text>
+            {walked.map((p) => (
               <Pressable
                 key={p.phase}
-                testID={`phase-node-${p.phase}`}
-                onPress={() => router.push(`/phase/${p.phase}`)}
-                style={styles.node}
+                onPress={() => openChapter(p)}
+                style={styles.walkedRow}
+                testID={`journey-walked-${p.phase}`}
               >
-                <View style={styles.nodeLine}>
-                  <View style={[styles.dot, p.is_unlocked ? styles.dotUnlocked : styles.dotLocked, p.is_current && styles.dotCurrent]}>
-                    {p.is_unlocked ? (
-                      <Feather name={p.is_current ? "circle" : "check"} size={12} color={colors.onBrandPrimary} />
-                    ) : (
-                      <Feather name="lock" size={10} color={colors.onSurfaceTertiary} />
-                    )}
-                  </View>
-                  {idx < phases.length - 1 && <View style={[styles.line, p.is_unlocked && styles.lineActive]} />}
+                <Text style={styles.walkedNum}>{ROMAN[p.phase]}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.walkedTitle}>{p.title}</Text>
+                  <Text style={styles.walkedDur}>{p.duration}</Text>
                 </View>
-                <View style={[styles.nodeCard, !p.is_unlocked && styles.nodeCardLocked]}>
-                  <Text style={styles.nodeEyebrow}>Phase {p.phase} · {p.duration}</Text>
-                  <Text style={styles.nodeTitle}>{p.title}</Text>
-                  <Text style={styles.nodeSub}>{p.subtitle}</Text>
-                  {p.is_unlocked && (
-                    <View style={styles.progressTrack}>
-                      <View style={[styles.progressFill, { width: `${p.progress_pct}%` }]} />
-                    </View>
-                  )}
-                </View>
+                <Feather name="chevron-right" size={16} color={colors.onSurfaceTertiary} />
               </Pressable>
             ))}
           </View>
+        )}
 
-          <Text style={styles.sectionTitle}>Trauma Map events</Text>
-          <Text style={styles.sectionSub}>Landmarks to bring into therapy conversations.</Text>
-
-          {events.length === 0 ? (
-            <View style={styles.empty}>
-              <Feather name="map-pin" size={24} color={colors.onSurfaceTertiary} />
-              <Text style={styles.emptyText}>No events yet. Add moments, insights, or shifts to visualize your path.</Text>
-            </View>
-          ) : (
-            events.map((e) => (
-              <View key={e.event_id} style={styles.eventCard} testID={`timeline-event-${e.event_id}`}>
-                <Text style={styles.eventDate}>{new Date(e.event_date).toLocaleDateString()}</Text>
-                <Text style={styles.eventTitle}>{e.title}</Text>
-                {e.emotion ? <Text style={styles.eventChip}>{e.emotion}</Text> : null}
-                {e.insight ? <Text style={styles.eventInsight}>{e.insight}</Text> : null}
-              </View>
-            ))
-          )}
-
+        {current && (
           <Pressable
-            testID="add-timeline-event-button"
-            onPress={() => router.push("/timeline-new")}
-            style={styles.addBtn}
+            onPress={() => openChapter(current)}
+            style={({ pressed }) => [styles.currentCard, pressed && styles.pressed]}
+            testID={`journey-current-${current.phase}`}
           >
-            <Feather name="plus" size={16} color={colors.brandPrimary} />
-            <Text style={styles.addBtnText}>Add a landmark</Text>
+            <Text style={styles.currentNum}>{ROMAN[current.phase]}</Text>
+            <Text style={styles.currentEyebrow}>Where you are</Text>
+            <Text style={styles.currentTitle}>{current.title}</Text>
+            <Text style={styles.currentDur}>{current.duration}</Text>
+
+            <View style={styles.rule} />
+
+            <Text style={styles.paraLabel}>Purpose</Text>
+            <Text style={styles.para}>{CHAPTER_STORY[current.phase]?.purpose}</Text>
+
+            <Text style={styles.paraLabel}>What you may experience</Text>
+            <Text style={styles.para}>{CHAPTER_STORY[current.phase]?.experience}</Text>
+
+            <Text style={styles.paraLabel}>A gentle next step</Text>
+            <Text style={styles.paraGold}>{CHAPTER_STORY[current.phase]?.next}</Text>
+
+            <View style={styles.continueRow}>
+              <Text style={styles.continueText}>Continue this chapter</Text>
+              <Feather name="arrow-right" size={18} color={colors.onBrandPrimary} />
+            </View>
           </Pressable>
-        </ScrollView>
-      </SafeAreaView>
-    </View>
+        )}
+
+        {ahead.length > 0 && (
+          <View style={styles.block}>
+            <Text style={styles.blockLabel}>Chapters ahead</Text>
+            {ahead.map((p) => (
+              <Pressable
+                key={p.phase}
+                onPress={() => openChapter(p)}
+                style={styles.aheadRow}
+                testID={`journey-ahead-${p.phase}`}
+              >
+                <Text style={styles.aheadNum}>{ROMAN[p.phase]}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.aheadTitle}>{p.title}</Text>
+                  <Text style={styles.aheadPurpose} numberOfLines={2}>
+                    {CHAPTER_STORY[p.phase]?.purpose}
+                  </Text>
+                </View>
+                <Feather name="chevron-right" size={16} color={colors.onSurfaceTertiary} />
+              </Pressable>
+            ))}
+          </View>
+        )}
+
+        <Text style={styles.closing}>Move gently. The story will keep.</Text>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
-  hero: { position: "absolute", top: 0, left: 0, right: 0, height: 220 },
-  scrim: { position: "absolute", top: 0, left: 0, right: 0, height: 220 },
-  header: { paddingHorizontal: spacing.xl, paddingTop: spacing.md, paddingBottom: spacing.lg },
-  title: { fontFamily: fonts.display, fontSize: 32, color: colors.onSurface },
-  sub: { fontFamily: fonts.body, fontSize: fontSize.base, color: colors.onSurfaceSecondary, marginTop: 2 },
-  body: { paddingHorizontal: spacing.xl, paddingBottom: 120 },
-  timeline: { marginTop: spacing.md },
-  node: { flexDirection: "row", gap: spacing.md, marginBottom: spacing.md },
-  nodeLine: { alignItems: "center", width: 24 },
-  dot: { width: 24, height: 24, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: colors.surfaceTertiary },
-  dotUnlocked: { backgroundColor: colors.brandPrimary },
-  dotLocked: { backgroundColor: colors.surfaceTertiary },
-  dotCurrent: { backgroundColor: colors.brandSecondary },
-  line: { width: 2, flex: 1, backgroundColor: colors.surfaceTertiary, marginTop: 4, minHeight: 40 },
-  lineActive: { backgroundColor: colors.brandTertiary },
-  nodeCard: { flex: 1, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: spacing.lg, borderWidth: 1, borderColor: colors.border },
-  nodeCardLocked: { opacity: 0.55 },
-  nodeEyebrow: { fontFamily: fonts.body, fontSize: fontSize.xs, color: colors.onSurfaceTertiary, letterSpacing: 1, textTransform: "uppercase", marginBottom: spacing.xs },
-  nodeTitle: { fontFamily: fonts.display, fontSize: fontSize.xl, color: colors.onSurface },
-  nodeSub: { fontFamily: fonts.body, fontSize: fontSize.sm, color: colors.onSurfaceSecondary, marginTop: 2, marginBottom: spacing.sm },
-  progressTrack: { height: 4, borderRadius: 2, backgroundColor: colors.surfaceTertiary, marginTop: spacing.sm, overflow: "hidden" },
-  progressFill: { height: 4, backgroundColor: colors.brandPrimary },
-  sectionTitle: { fontFamily: fonts.display, fontSize: fontSize.xl, color: colors.onSurface, marginTop: spacing.xxl, marginBottom: spacing.xs },
-  sectionSub: { fontFamily: fonts.body, fontSize: fontSize.base, color: colors.onSurfaceSecondary, marginBottom: spacing.md },
-  empty: { alignItems: "center", padding: spacing.xl, gap: spacing.sm },
-  emptyText: { fontFamily: fonts.body, fontSize: fontSize.base, color: colors.onSurfaceSecondary, textAlign: "center" },
-  eventCard: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: spacing.lg, marginBottom: spacing.sm, borderWidth: 1, borderColor: colors.border },
-  eventDate: { fontFamily: fonts.body, fontSize: fontSize.sm, color: colors.onSurfaceTertiary, marginBottom: spacing.xs },
-  eventTitle: { fontFamily: fonts.display, fontSize: fontSize.lg, color: colors.onSurface },
-  eventChip: { alignSelf: "flex-start", backgroundColor: colors.brandTertiary, color: colors.onBrandTertiary, paddingHorizontal: spacing.md, paddingVertical: 2, borderRadius: radius.pill, marginTop: spacing.sm, fontSize: fontSize.xs, fontFamily: fonts.body },
-  eventInsight: { fontFamily: fonts.body, fontSize: fontSize.base, color: colors.onSurfaceSecondary, marginTop: spacing.sm, lineHeight: 22 },
-  addBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm, marginTop: spacing.lg, paddingVertical: 14, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceSecondary },
-  addBtnText: { fontFamily: fonts.body, fontSize: fontSize.base, color: colors.brandPrimary },
+  scroll: { paddingHorizontal: spacing.xl, paddingTop: spacing.xxl, paddingBottom: spacing.xxxl },
+
+  eyebrow: { fontFamily: fonts.body, fontSize: fontSize.xs, color: colors.onSurfaceTertiary, letterSpacing: 2, textTransform: "uppercase", marginBottom: spacing.md },
+  title: { fontFamily: fonts.serif, fontSize: 40, lineHeight: 46, color: colors.onSurface, fontWeight: "500" },
+  subtitle: { fontFamily: fonts.serif, fontSize: fontSize.lg, color: colors.onSurfaceSecondary, fontStyle: "italic", marginTop: spacing.md, marginBottom: spacing.xxl, lineHeight: 26 },
+
+  block: { marginBottom: spacing.xxl },
+  blockLabel: { fontFamily: fonts.body, fontSize: fontSize.xs, color: colors.onSurfaceTertiary, letterSpacing: 2, textTransform: "uppercase", marginBottom: spacing.md },
+
+  walkedRow: { flexDirection: "row", alignItems: "center", paddingVertical: spacing.md, borderTopWidth: 1, borderTopColor: colors.divider },
+  walkedNum: { fontFamily: fonts.serif, fontSize: fontSize.xl, color: colors.onSurfaceTertiary, width: 40, fontWeight: "500" },
+  walkedTitle: { fontFamily: fonts.serif, fontSize: fontSize.lg, color: colors.onSurface },
+  walkedDur: { fontFamily: fonts.body, fontSize: fontSize.sm, color: colors.onSurfaceTertiary, marginTop: 2 },
+
+  pressed: { opacity: 0.92 },
+  currentCard: { backgroundColor: colors.brandPrimary, padding: spacing.xl, borderRadius: radius.md, marginBottom: spacing.xxl },
+  currentNum: { fontFamily: fonts.serif, fontSize: 56, lineHeight: 60, color: colors.brandTertiary, fontWeight: "500" },
+  currentEyebrow: { fontFamily: fonts.body, fontSize: fontSize.xs, color: colors.brandTertiary, letterSpacing: 2, textTransform: "uppercase", marginTop: spacing.md, marginBottom: spacing.xs },
+  currentTitle: { fontFamily: fonts.serif, fontSize: 30, lineHeight: 36, color: colors.onBrandPrimary, fontWeight: "500" },
+  currentDur: { fontFamily: fonts.body, fontSize: fontSize.sm, color: colors.brandTertiary, marginTop: spacing.xs, letterSpacing: 0.5 },
+  rule: { height: 1, backgroundColor: colors.brandSecondary, opacity: 0.5, marginVertical: spacing.xl },
+  paraLabel: { fontFamily: fonts.body, fontSize: fontSize.xs, color: colors.brandTertiary, letterSpacing: 2, textTransform: "uppercase", marginTop: spacing.lg, marginBottom: spacing.xs },
+  para: { fontFamily: fonts.body, fontSize: fontSize.base, color: colors.onBrandPrimary, lineHeight: 24 },
+  paraGold: { fontFamily: fonts.serif, fontSize: fontSize.lg, color: colors.accent, lineHeight: 26, fontStyle: "italic" },
+  continueRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: spacing.xl, paddingTop: spacing.lg, borderTopWidth: 1, borderTopColor: colors.brandSecondary },
+  continueText: { fontFamily: fonts.body, fontSize: fontSize.base, color: colors.onBrandPrimary, letterSpacing: 0.5, fontWeight: "500" },
+
+  aheadRow: { flexDirection: "row", alignItems: "flex-start", paddingVertical: spacing.md, borderTopWidth: 1, borderTopColor: colors.divider, opacity: 0.7 },
+  aheadNum: { fontFamily: fonts.serif, fontSize: fontSize.xl, color: colors.onSurfaceTertiary, width: 40, fontWeight: "500" },
+  aheadTitle: { fontFamily: fonts.serif, fontSize: fontSize.lg, color: colors.onSurface },
+  aheadPurpose: { fontFamily: fonts.body, fontSize: fontSize.sm, color: colors.onSurfaceSecondary, marginTop: 4, lineHeight: 20 },
+
+  closing: { fontFamily: fonts.serif, fontSize: fontSize.base, color: colors.onSurfaceTertiary, fontStyle: "italic", textAlign: "center", marginTop: spacing.xxl },
 });

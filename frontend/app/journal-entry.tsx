@@ -1,115 +1,224 @@
-import { useState } from "react";
-import { View, Text, StyleSheet, TextInput, Pressable, ScrollView, KeyboardAvoidingView, Platform, ActivityIndicator } from "react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { View, Text, StyleSheet, TextInput, Pressable, ScrollView, KeyboardAvoidingView, Platform, ActivityIndicator, Animated, Easing } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
 
 import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
 import { api } from "@/src/lib/api";
 
+// A hardcover-notebook writing surface. Nearly blank canvas. One serif for
+// the title, one sans for the body. Autosave every ~1.5s of quiet typing.
+
 const MOOD_WORDS = ["Heavy", "Tender", "Anxious", "Grounded", "Open", "Grateful", "Hopeful", "Numb", "Steady", "Tired"];
+
+type SaveState = "idle" | "saving" | "saved";
 
 export default function JournalEntryScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ id?: string }>();
+  const editingId = params.id ?? undefined;
+
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [moodWord, setMoodWord] = useState<string | null>(null);
-  const [moodScore, setMoodScore] = useState(3);
-  const [saving, setSaving] = useState(false);
+  const [moodScore, setMoodScore] = useState<number>(3);
+  const [prompt, setPrompt] = useState<string>("");
+  const [loading, setLoading] = useState(!!editingId);
+  const [entryId, setEntryId] = useState<string | undefined>(editingId);
+  const [saveState, setSaveState] = useState<SaveState>("idle");
 
-  const save = async () => {
-    if (!body.trim()) return;
-    setSaving(true);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const savedFade = useRef(new Animated.Value(0)).current;
+  const canvasFade = useRef(new Animated.Value(0)).current;
+
+  // On mount — fetch prompt + existing entry if editing.
+  useEffect(() => {
+    (async () => {
+      try {
+        const [p, entriesIfNeeded] = await Promise.all([
+          api.journalPrompt().catch(() => null),
+          editingId ? api.listJournal() : Promise.resolve(null),
+        ]);
+        if (p?.prompt) setPrompt(p.prompt);
+        if (editingId && entriesIfNeeded) {
+          const found = entriesIfNeeded.find((e: any) => e.entry_id === editingId);
+          if (found) {
+            setTitle(found.title ?? "");
+            setBody(found.body ?? "");
+            setMoodWord(found.mood_word ?? null);
+            setMoodScore(found.mood_score ?? 3);
+          }
+        }
+      } finally {
+        setLoading(false);
+        Animated.timing(canvasFade, {
+          toValue: 1,
+          duration: 550,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }).start();
+      }
+    })();
+  }, [editingId, canvasFade]);
+
+  // Autosave — debounced. Creates on first save, then updates.
+  const saveNow = useCallback(async (fields: { title?: string; body?: string; mood_word?: string | null; mood_score?: number }) => {
+    if (!body.trim() && !title.trim() && !fields.body?.trim() && !fields.title?.trim()) return;
+    const payload = {
+      title: fields.title ?? title ?? undefined,
+      body: fields.body ?? body,
+      mood_word: (fields.mood_word ?? moodWord) ?? undefined,
+      mood_score: fields.mood_score ?? moodScore,
+    };
+    setSaveState("saving");
     try {
-      await api.createJournal({
-        title: title || undefined,
-        body,
-        mood_word: moodWord ?? undefined,
-        mood_score: moodScore,
-      });
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-      router.back();
-    } finally {
-      setSaving(false);
+      if (entryId) {
+        await api.updateJournal(entryId, payload);
+      } else {
+        const created = await api.createJournal(payload);
+        setEntryId(created.entry_id);
+      }
+      setSaveState("saved");
+      Animated.sequence([
+        Animated.timing(savedFade, { toValue: 1, duration: 250, useNativeDriver: true }),
+        Animated.delay(1200),
+        Animated.timing(savedFade, { toValue: 0, duration: 700, useNativeDriver: true }),
+      ]).start(() => setSaveState("idle"));
+    } catch {
+      setSaveState("idle");
     }
+  }, [title, body, moodWord, moodScore, entryId, savedFade]);
+
+  const scheduleSave = useCallback(() => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => saveNow({}), 1500);
+  }, [saveNow]);
+
+  const handleTitle = (t: string) => { setTitle(t); scheduleSave(); };
+  const handleBody = (t: string) => { setBody(t); scheduleSave(); };
+  const handleMood = (w: string) => {
+    const next = moodWord === w ? null : w;
+    setMoodWord(next);
+    Haptics.selectionAsync().catch(() => {});
+    saveNow({ mood_word: next });
   };
+  const handleScore = (n: number) => {
+    setMoodScore(n);
+    Haptics.selectionAsync().catch(() => {});
+    saveNow({ mood_score: n });
+  };
+
+  const onClose = async () => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    if ((title.trim() || body.trim()) && saveState !== "saved") {
+      await saveNow({});
+    }
+    if (title.trim() || body.trim()) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    }
+    router.back();
+  };
+
+  useEffect(() => {
+    return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
+  }, []);
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.root} testID="journal-entry-loading">
+        <ActivityIndicator style={{ marginTop: 40 }} color={colors.brandPrimary} />
+      </SafeAreaView>
+    );
+  }
+
+  const dateStr = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
 
   return (
     <SafeAreaView style={styles.root} edges={["top", "left", "right"]} testID="journal-entry-screen">
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
-        <View style={styles.header}>
-          <Pressable onPress={() => router.back()} testID="journal-close-button" style={styles.close}>
-            <Feather name="x" size={20} color={colors.onSurfaceSecondary} />
+        <View style={styles.appbar}>
+          <Pressable onPress={onClose} style={styles.iconBtn} testID="journal-close-button">
+            <Feather name="chevron-left" size={22} color={colors.onSurface} />
           </Pressable>
-          <Text style={styles.title}>New entry</Text>
-          <View style={{ width: 36 }} />
-        </View>
 
-        <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
-          <TextInput
-            testID="journal-title-input"
-            value={title}
-            onChangeText={setTitle}
-            placeholder="Title (optional)"
-            placeholderTextColor={colors.onSurfaceTertiary}
-            style={styles.titleInput}
-          />
-          <TextInput
-            testID="journal-body-input"
-            value={body}
-            onChangeText={setBody}
-            placeholder="Nothing here is judged. Write freely."
-            placeholderTextColor={colors.onSurfaceTertiary}
-            style={styles.bodyInput}
-            multiline
-            textAlignVertical="top"
-          />
+          <Animated.View style={[styles.savedBadge, { opacity: savedFade }]} pointerEvents="none">
+            <Feather name="check" size={12} color={colors.brandPrimary} />
+            <Text style={styles.savedText}>saved</Text>
+          </Animated.View>
 
-          <Text style={styles.label}>A word for how it felt</Text>
-          <View style={styles.wordRow}>
-            {MOOD_WORDS.map((w) => (
-              <Pressable
-                key={w}
-                testID={`journal-mood-word-${w}`}
-                onPress={() => setMoodWord(moodWord === w ? null : w)}
-                style={[styles.wordChip, moodWord === w && styles.wordChipActive]}
-              >
-                <Text style={[styles.wordText, moodWord === w && styles.wordTextActive]}>{w}</Text>
-              </Pressable>
-            ))}
-          </View>
-
-          <Text style={styles.label}>Overall mood ({moodScore})</Text>
-          <View style={styles.moodRow}>
-            {[1, 2, 3, 4, 5].map((n) => (
-              <Pressable
-                key={n}
-                testID={`journal-mood-${n}`}
-                onPress={() => setMoodScore(n)}
-                style={[styles.moodDot, moodScore === n && styles.moodDotActive]}
-              >
-                <Text style={[styles.moodNum, moodScore === n && styles.moodNumActive]}>{n}</Text>
-              </Pressable>
-            ))}
-          </View>
-        </ScrollView>
-
-        <View style={styles.footer}>
-          <Pressable
-            testID="journal-save-button"
-            onPress={save}
-            disabled={saving || !body.trim()}
-            style={[styles.primary, (!body.trim() || saving) && styles.primaryDisabled]}
-          >
-            {saving ? <ActivityIndicator color={colors.onBrandPrimary} /> : (
-              <>
-                <Feather name="check" size={18} color={colors.onBrandPrimary} />
-                <Text style={styles.primaryText}>Save entry</Text>
-              </>
-            )}
+          <Pressable onPress={onClose} style={styles.iconBtn} testID="journal-done-button">
+            <Feather name="check" size={20} color={colors.onSurface} />
           </Pressable>
         </View>
+
+        <Animated.View style={{ flex: 1, opacity: canvasFade }}>
+          <ScrollView contentContainerStyle={styles.canvas} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+            <Text style={styles.date}>{dateStr}</Text>
+
+            <TextInput
+              testID="journal-title-input"
+              value={title}
+              onChangeText={handleTitle}
+              placeholder="Title (optional)"
+              placeholderTextColor={colors.onSurfaceTertiary}
+              style={styles.titleInput}
+              multiline
+              scrollEnabled={false}
+            />
+
+            {prompt && !body.trim() ? (
+              <Text style={styles.prompt}>{prompt}</Text>
+            ) : null}
+
+            <TextInput
+              testID="journal-body-input"
+              value={body}
+              onChangeText={handleBody}
+              placeholder="Begin, anywhere."
+              placeholderTextColor={colors.onSurfaceTertiary}
+              style={styles.bodyInput}
+              multiline
+              textAlignVertical="top"
+              scrollEnabled={false}
+              autoFocus={!editingId}
+            />
+
+            {/* Mood — appears only after user has written something */}
+            {(body.trim() || moodWord) ? (
+              <View style={styles.moodBlock}>
+                <Text style={styles.moodLabel}>A word for how it felt</Text>
+                <View style={styles.moodChips}>
+                  {MOOD_WORDS.map((w) => (
+                    <Pressable
+                      key={w}
+                      testID={`journal-mood-word-${w}`}
+                      onPress={() => handleMood(w)}
+                      style={[styles.moodChip, moodWord === w && styles.moodChipOn]}
+                    >
+                      <Text style={[styles.moodChipText, moodWord === w && styles.moodChipTextOn]}>
+                        {w.toLowerCase()}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+
+                <Text style={[styles.moodLabel, { marginTop: spacing.xl }]}>overall</Text>
+                <View style={styles.scoreRow}>
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <Pressable
+                      key={n}
+                      testID={`journal-mood-${n}`}
+                      onPress={() => handleScore(n)}
+                      style={[styles.scoreDot, moodScore === n && styles.scoreDotOn]}
+                    />
+                  ))}
+                </View>
+              </View>
+            ) : null}
+          </ScrollView>
+        </Animated.View>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -117,25 +226,25 @@ export default function JournalEntryScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
-  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: spacing.xl, paddingVertical: spacing.md },
-  close: { width: 36, height: 36, borderRadius: radius.pill, backgroundColor: colors.surfaceSecondary, alignItems: "center", justifyContent: "center" },
-  title: { fontFamily: fonts.display, fontSize: fontSize.xl, color: colors.onSurface },
-  body: { paddingHorizontal: spacing.xl, paddingBottom: spacing.xxxl },
-  titleInput: { fontFamily: fonts.display, fontSize: 24, color: colors.onSurface, borderBottomWidth: 1, borderBottomColor: colors.divider, paddingVertical: spacing.md, marginBottom: spacing.md },
-  bodyInput: { fontFamily: fonts.body, fontSize: fontSize.lg, color: colors.onSurface, lineHeight: 26, minHeight: 200, paddingVertical: spacing.md },
-  label: { fontFamily: fonts.body, fontSize: fontSize.sm, color: colors.onSurfaceSecondary, marginTop: spacing.lg, marginBottom: spacing.sm },
-  wordRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
-  wordChip: { paddingHorizontal: spacing.md, paddingVertical: 8, borderRadius: radius.pill, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border },
-  wordChipActive: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
-  wordText: { fontFamily: fonts.body, fontSize: fontSize.base, color: colors.onSurface },
-  wordTextActive: { color: colors.onBrandPrimary },
-  moodRow: { flexDirection: "row", justifyContent: "space-between", marginTop: spacing.sm },
-  moodDot: { flex: 1, aspectRatio: 1, borderRadius: 999, backgroundColor: colors.surfaceSecondary, alignItems: "center", justifyContent: "center", marginHorizontal: 4, borderWidth: 1, borderColor: colors.border },
-  moodDotActive: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
-  moodNum: { fontFamily: fonts.display, fontSize: fontSize.xl, color: colors.onSurfaceSecondary },
-  moodNumActive: { color: colors.onBrandPrimary },
-  footer: { paddingHorizontal: spacing.xl, paddingVertical: spacing.md },
-  primary: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm, backgroundColor: colors.brandPrimary, paddingVertical: 16, borderRadius: radius.pill, minHeight: 52 },
-  primaryDisabled: { backgroundColor: colors.surfaceTertiary },
-  primaryText: { fontFamily: fonts.body, fontSize: fontSize.lg, color: colors.onBrandPrimary, fontWeight: "500" },
+  appbar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
+  iconBtn: { width: 40, height: 40, borderRadius: radius.pill, alignItems: "center", justifyContent: "center" },
+  savedBadge: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: spacing.md, paddingVertical: 4, borderRadius: radius.pill, backgroundColor: colors.surfaceSecondary },
+  savedText: { fontFamily: fonts.body, fontSize: fontSize.xs, color: colors.brandPrimary, letterSpacing: 1 },
+
+  canvas: { paddingHorizontal: spacing.xl, paddingTop: spacing.md, paddingBottom: spacing.xxxl },
+  date: { fontFamily: fonts.body, fontSize: fontSize.xs, color: colors.onSurfaceTertiary, letterSpacing: 2, textTransform: "uppercase", marginBottom: spacing.md },
+  titleInput: { fontFamily: fonts.serif, fontSize: 32, lineHeight: 40, color: colors.onSurface, fontWeight: "500", paddingVertical: spacing.sm, marginBottom: spacing.md },
+  prompt: { fontFamily: fonts.serif, fontSize: fontSize.lg, color: colors.onSurfaceTertiary, fontStyle: "italic", lineHeight: 28, marginBottom: spacing.lg },
+  bodyInput: { fontFamily: fonts.body, fontSize: fontSize.lg, color: colors.onSurface, lineHeight: 30, minHeight: 320, paddingVertical: spacing.md, letterSpacing: 0.2 },
+
+  moodBlock: { marginTop: spacing.xxl, paddingTop: spacing.xl, borderTopWidth: 1, borderTopColor: colors.divider },
+  moodLabel: { fontFamily: fonts.body, fontSize: fontSize.xs, color: colors.onSurfaceTertiary, letterSpacing: 2, textTransform: "uppercase", marginBottom: spacing.md },
+  moodChips: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
+  moodChip: { paddingHorizontal: spacing.md, paddingVertical: 8, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface },
+  moodChipOn: { borderColor: colors.brandPrimary, backgroundColor: colors.surfaceSecondary },
+  moodChipText: { fontFamily: fonts.serif, fontSize: fontSize.base, color: colors.onSurface, fontStyle: "italic" },
+  moodChipTextOn: { color: colors.brandPrimary },
+  scoreRow: { flexDirection: "row", gap: spacing.md },
+  scoreDot: { width: 12, height: 12, borderRadius: 6, borderWidth: 1, borderColor: colors.borderStrong },
+  scoreDotOn: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
 });

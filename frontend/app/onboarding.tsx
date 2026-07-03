@@ -197,7 +197,7 @@ export default function OnboardingScreen() {
                 </View>
               </View>
 
-              <Text style={styles.paywallHint}>Payments are not yet enabled. Continue to explore your sanctuary — you can subscribe when you're ready.</Text>
+              <Text style={styles.paywallHint}>Payments are not yet enabled. Continue to explore your sanctuary — you can subscribe when you&rsquo;re ready.</Text>
               <Text style={styles.paywallMark}>Backed by science · Therapist-designed</Text>
             </View>
           )}

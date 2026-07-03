@@ -433,6 +433,76 @@ async def create_journal(body: JournalCreate, user: User = Depends(get_current_u
     return entry
 
 
+@api.put("/journal/{entry_id}", response_model=JournalEntry)
+async def update_journal(entry_id: str, body: JournalCreate, user: User = Depends(get_current_user)):
+    """Autosave-friendly upsert. Only the owner may update."""
+    existing = await db.journal_entries.find_one(
+        {"user_id": user.user_id, "entry_id": entry_id}, {"_id": 0}
+    )
+    if not existing:
+        raise HTTPException(status_code=404, detail="Entry not found")
+    patch = {k: v for k, v in body.model_dump(exclude_unset=True).items()}
+    await db.journal_entries.update_one(
+        {"user_id": user.user_id, "entry_id": entry_id},
+        {"$set": patch},
+    )
+    updated = await db.journal_entries.find_one(
+        {"user_id": user.user_id, "entry_id": entry_id}, {"_id": 0}
+    )
+    return JournalEntry(**updated)
+
+
+_JOURNAL_PROMPTS_MORNING = [
+    "What is asking for your attention this morning?",
+    "How did you arrive here today?",
+    "One breath — what is present, in the body?",
+    "Begin anywhere. There is nothing to fix.",
+]
+_JOURNAL_PROMPTS_MIDDAY = [
+    "What is your body telling you right now?",
+    "Where is your attention resting?",
+    "A soft observation, without judgement.",
+    "What has today held so far?",
+]
+_JOURNAL_PROMPTS_EVENING = [
+    "What is worth carrying into tonight?",
+    "One thing you would like to lay down.",
+    "A tender note to the version of you who woke up today.",
+    "What did you notice, that no one else saw?",
+]
+_JOURNAL_PROMPTS_NIGHT = [
+    "What is quiet enough now to be heard?",
+    "The day is done. What lingers?",
+    "One kindness — to yourself, before sleep.",
+]
+
+
+@api.get("/journal/prompt")
+async def journal_prompt(user: User = Depends(get_current_user)) -> Dict[str, Any]:
+    """A softly-rotating writing prompt driven by the time of day and the
+    user's most recent mood word. Never instructive, never assessing."""
+    h = now_utc().hour
+    if 5 <= h < 12:
+        pool = _JOURNAL_PROMPTS_MORNING
+    elif 12 <= h < 17:
+        pool = _JOURNAL_PROMPTS_MIDDAY
+    elif 17 <= h < 22:
+        pool = _JOURNAL_PROMPTS_EVENING
+    else:
+        pool = _JOURNAL_PROMPTS_NIGHT
+
+    # Deterministic per-day so it doesn't shift while you're writing.
+    today = now_utc().date()
+    idx = (today.toordinal() + user.user_id.__hash__()) % len(pool)
+    prompt = pool[idx]
+
+    latest = await db.journal_entries.find_one(
+        {"user_id": user.user_id}, {"_id": 0}, sort=[("created_at", -1)]
+    )
+    recent_mood = latest.get("mood_word") if latest else None
+    return {"prompt": prompt, "recent_mood": recent_mood}
+
+
 @api.get("/journal", response_model=List[JournalEntry])
 async def list_journal(user: User = Depends(get_current_user)):
     docs = await db.journal_entries.find({"user_id": user.user_id}, {"_id": 0}) \

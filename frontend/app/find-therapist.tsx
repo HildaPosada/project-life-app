@@ -31,7 +31,7 @@ export default function FindTherapistScreen() {
 
       <ScrollView contentContainerStyle={styles.scroll}>
         <Text style={styles.copy}>
-          This app requires that you work with a licensed therapist. Here's how to get started:
+          This app requires that you work with a licensed therapist. Here&rsquo;s how to get started:
         </Text>
 
         <View style={styles.steps}>
@@ -49,7 +49,7 @@ export default function FindTherapistScreen() {
         <View style={styles.quoteBox}>
           <Text style={styles.quoteLabel}>Suggested opening line</Text>
           <Text style={styles.quote}>
-            "Hi, I'm looking for a licensed therapist to support me through a trauma-informed healing journey."
+            &ldquo;Hi, I&rsquo;m looking for a licensed therapist to support me through a trauma-informed healing journey.&rdquo;
           </Text>
         </View>
 
