@@ -24,6 +24,8 @@ API_URL = f"{BASE_URL}/api"
 MONGO_URL = os.environ["MONGO_URL"]
 DB_NAME = os.environ["DB_NAME"]
 SUPABASE_JWT_SECRET = os.environ["SUPABASE_JWT_SECRET"]
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
+SUPABASE_ISSUER = f"{SUPABASE_URL}/auth/v1" if SUPABASE_URL else None
 
 # Canonical QA test user (Supabase-style uuid-ish sub)
 QA_SUB = "11111111-1111-4111-8111-111111111111"
@@ -57,6 +59,8 @@ def make_jwt(
         "iat": int(now.timestamp()),
         "role": "authenticated",
     }
+    if SUPABASE_ISSUER:
+        payload["iss"] = SUPABASE_ISSUER
     if include_exp:
         payload["exp"] = int((now + exp_delta).timestamp())
     return jose_jwt.encode(payload, secret, algorithm=algorithm)

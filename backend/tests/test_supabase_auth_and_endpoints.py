@@ -125,6 +125,9 @@ class TestUpsertAndIdempotency:
             "iat": int(now.timestamp()),
             "exp": int(now.timestamp()) + 3600,
         }
+        _supa_url = (os.environ.get("SUPABASE_URL") or "").rstrip("/")
+        if _supa_url:
+            payload["iss"] = f"{_supa_url}/auth/v1"
         token = jose_jwt.encode(payload, os.environ["SUPABASE_JWT_SECRET"], algorithm="HS256")
         try:
             r = anon_client.get(

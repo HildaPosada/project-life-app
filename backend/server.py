@@ -35,6 +35,34 @@ SUPABASE_JWT_SECRET = os.environ.get("SUPABASE_JWT_SECRET", "")
 # to DISABLED so a production deploy without this env var explicitly set can
 # never expose a self-unlock. Dev containers enable it via backend/.env.
 ALLOW_MOCK_ENTITLEMENT = os.environ.get("ALLOW_MOCK_ENTITLEMENT", "0").lower() in ("1", "true", "yes")
+# Defense-in-depth: even when the flag above is on, the mock endpoint will
+# reject any caller whose email is not in this allowlist.
+# Entries are either full emails ("alice@example.com") or domain suffixes
+# starting with "@" ("@projectlife.local" matches every address in that
+# domain — used for the automated test suite).
+# An empty / unset allowlist disables the endpoint. Populate via
+# backend/.env with the tester email(s), e.g. ADMIN_EMAILS="a@b.com,c@d.com".
+_admin_emails_raw = os.environ.get("ADMIN_EMAILS", "")
+ADMIN_EMAILS: set[str] = set()
+ADMIN_EMAIL_DOMAINS: set[str] = set()
+for _entry in (e.strip().lower() for e in _admin_emails_raw.split(",") if e.strip()):
+    if _entry.startswith("@"):
+        ADMIN_EMAIL_DOMAINS.add(_entry[1:])
+    else:
+        ADMIN_EMAILS.add(_entry)
+
+
+def _is_admin_email(email: str) -> bool:
+    if not email:
+        return False
+    lower = email.lower()
+    if lower in ADMIN_EMAILS:
+        return True
+    if "@" in lower:
+        domain = lower.rsplit("@", 1)[1]
+        if domain in ADMIN_EMAIL_DOMAINS:
+            return True
+    return False
 
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
@@ -274,12 +302,23 @@ async def get_current_user(authorization: Optional[str] = Header(None)) -> User:
     token = authorization[len("Bearer ") :].strip()
     if not SUPABASE_JWT_SECRET:
         raise HTTPException(status_code=500, detail="Supabase JWT secret not configured")
+    # Pin the expected issuer to the Supabase project so a token minted by a
+    # different Supabase project (or a lookalike) cannot be replayed here.
+    expected_issuer = f"{SUPABASE_URL.rstrip('/')}/auth/v1" if SUPABASE_URL else None
     try:
+        decode_options = {
+            "verify_iss": bool(expected_issuer),
+            # Small clock-skew leeway (seconds) so tokens minted seconds ago
+            # don't 401 on servers whose clocks drift slightly.
+            "leeway": 30,
+        }
         claims = jose_jwt.decode(
             token,
             SUPABASE_JWT_SECRET,
             algorithms=["HS256"],
             audience="authenticated",
+            issuer=expected_issuer,
+            options=decode_options,
         )
     except JWTError as e:
         raise HTTPException(status_code=401, detail=f"Invalid token: {e}") from e
@@ -405,10 +444,16 @@ async def mock_entitlement(body: MockEntitlementRequest, user: User = Depends(ge
     gating logic before RevenueCat / Stripe are wired end-to-end. Will be
     replaced by webhook-driven sync in Sprint 2b.
 
-    Gated by ALLOW_MOCK_ENTITLEMENT env var so a self-unlock isn't possible
-    in production. Set ALLOW_MOCK_ENTITLEMENT=0 to disable.
+    Two locks:
+      1. ALLOW_MOCK_ENTITLEMENT env flag must be on.
+      2. Caller's email must be in ADMIN_EMAILS allowlist (comma-separated).
+    Both are required — an empty allowlist disables the endpoint even when
+    the flag is on. This prevents any authenticated user from self-granting
+    Premium via the mock endpoint in shared / preview environments.
     """
     if not ALLOW_MOCK_ENTITLEMENT:
+        raise HTTPException(status_code=404, detail="Not found")
+    if not _is_admin_email(user.email or ""):
         raise HTTPException(status_code=404, detail="Not found")
     if body.premium:
         patch = {
@@ -513,9 +558,23 @@ async def advance_phase(user: User = Depends(get_current_user)):
     progress = await compute_phase_progress(user, user.current_phase)
     if progress < 100:
         raise HTTPException(status_code=400, detail="Current phase not complete")
+    # Server-side premium enforcement (defense in depth alongside the
+    # client `<PremiumGate>` component). Free users may only reach the
+    # first healing chapter (phase 1). Advancing INTO phase 2 or 3
+    # requires an active premium entitlement.
+    target_phase = user.current_phase + 1
+    if target_phase >= 2 and not _entitlement_is_active(user):
+        raise HTTPException(
+            status_code=402,
+            detail={
+                "error": "premium_required",
+                "message": "This chapter opens with Premium.",
+                "target_phase": target_phase,
+            },
+        )
     await db.users.update_one(
         {"user_id": user.user_id},
-        {"$set": {"current_phase": user.current_phase + 1, "updated_at": now_utc()}},
+        {"$set": {"current_phase": target_phase, "updated_at": now_utc()}},
     )
     doc = await db.users.find_one({"user_id": user.user_id}, {"_id": 0})
     return User(**doc)

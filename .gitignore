@@ -83,3 +83,10 @@ android-sdk/
 credentials.json
 *.key
 .credentials
+
+# Secrets — never commit env files with real secrets to source control.
+# The Emergent deployment pipeline reads env vars from the pod filesystem
+# directly, so gitignoring these does not block deployment.
+backend/.env
+frontend/.env
+*.local.env
