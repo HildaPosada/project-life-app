@@ -31,9 +31,10 @@ DB_NAME = os.environ["DB_NAME"]
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 SUPABASE_JWT_SECRET = os.environ.get("SUPABASE_JWT_SECRET", "")
 # Dev-only: allows POST /api/entitlement/mock to toggle premium without a
-# real purchase. Must be "1" / "true" (case insensitive). In production this
-# should be unset so no user can self-unlock.
-ALLOW_MOCK_ENTITLEMENT = os.environ.get("ALLOW_MOCK_ENTITLEMENT", "1").lower() in ("1", "true", "yes")
+# real purchase. Must be "1" / "true" (case insensitive) to enable. Defaults
+# to DISABLED so a production deploy without this env var explicitly set can
+# never expose a self-unlock. Dev containers enable it via backend/.env.
+ALLOW_MOCK_ENTITLEMENT = os.environ.get("ALLOW_MOCK_ENTITLEMENT", "0").lower() in ("1", "true", "yes")
 
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
