@@ -90,3 +90,6 @@ credentials.json
 backend/.env
 frontend/.env
 *.local.env
+.env
+.env.*
+*.env
