@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef } from "react";
-import { Animated, Easing, View, Pressable, StyleSheet, Text } from "react-native";
+import { Animated, Easing, View, Pressable, StyleSheet, Text, AccessibilityInfo } from "react-native";
 import Svg, {
   Defs,
   LinearGradient as SvgLinearGradient,
@@ -125,8 +125,10 @@ export function SanctuaryScene({
   // Animated values — only two, both very slow and non-alarming.
   const sway = useRef(new Animated.Value(0)).current;
   const drift = useRef(new Animated.Value(0)).current;
+  const [reduceMotion, setReduceMotion] = React.useState(false);
 
   useEffect(() => {
+    if (reduceMotion) return;
     Animated.loop(
       Animated.sequence([
         Animated.timing(sway, { toValue: 1, duration: 6000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
@@ -136,7 +138,7 @@ export function SanctuaryScene({
     Animated.loop(
       Animated.timing(drift, { toValue: 1, duration: 45000, easing: Easing.linear, useNativeDriver: true }),
     ).start();
-  }, [sway, drift]);
+  }, [sway, drift, reduceMotion]);
 
   const rotate = sway.interpolate({ inputRange: [0, 1], outputRange: ["-1.5deg", "1.5deg"] });
   const cloudX = drift.interpolate({ inputRange: [0, 1], outputRange: [-40, width + 40] });
