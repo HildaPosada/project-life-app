@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Project Life",
-    "slug": "frontend",
+    "slug": "project-life-app",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -42,6 +42,13 @@
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "d5b8d163-b4db-46e5-824b-85517dbcfeea"
+      }
+    },
+    "owner": "project-life-app"
   }
 }

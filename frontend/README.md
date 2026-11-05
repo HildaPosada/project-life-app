@@ -36,9 +36,9 @@ bundle. It runs without Metro and does not submit to the App Store. No developme
 client dependency is needed for this profile.
 
 1. Sign into the intended Expo account: `npx eas-cli@latest login`.
-2. Run `npx eas-cli@latest init` and select the **existing** Project Life Expo
-   project, if one exists. Confirm its ownership before creating a new project.
-   Commit the resulting EAS project ID once verified.
+2. The app is linked to `@project-life-app/project-life-app`, project ID
+   `d5b8d163-b4db-46e5-824b-85517dbcfeea`. Reuse this project; no new project
+   creation is needed. The login on this Mac is scoped to this organization.
 3. Set the three public variables above in that project's **preview** environment,
    reusing the existing authorized backend. Confirm them before starting a build.
 4. Run `npx eas-cli@latest device:create`; open its registration link on the iPhone.

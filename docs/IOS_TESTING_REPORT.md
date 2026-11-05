@@ -53,8 +53,14 @@ VoiceOver behavior still require device review.
 
 ## Remaining issues and required participation
 
-- `eas whoami` reports **Not logged in** on this Mac. Sign in interactively.
-- Link the intended Expo project; the repository currently has no EAS project ID.
+- Expo CLI is now signed in as `hyperintelligence`, scoped to Developer access
+  on organization `project-life-app` only. Native app linked to
+  `@project-life-app/project-life-app` (ID `d5b8d163-b4db-46e5-824b-85517dbcfeea`).
+  Slug updated; existing bundle ID and deep-link scheme retained.
+- EAS preview environment has no variables yet. Device registration is waiting
+  for the Apple Developer account email and subsequent interactive authentication.
+- EAS could not upload the optional project icon with the scoped Developer login;
+  local icon configuration is retained and this does not prevent project linking.
 - Supply the existing public backend URL, Supabase URL and client anon key to
   local `.env` and EAS preview environment. No backend credentials were changed.
 - Authenticate Expo and Apple interactively, select the existing Apple team and
