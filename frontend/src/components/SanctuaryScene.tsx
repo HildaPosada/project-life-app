@@ -262,8 +262,11 @@ export function SanctuaryScene({
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
               onStonePress(s);
             }}
+            accessibilityRole="button"
+            accessibilityLabel={`${s.title}, ${s.kind} memory, ${s.date}`}
+            accessibilityHint="Opens this memory"
             testID={`memory-stone-${s.stone_id}`}
-            style={[styles.stone, { left: pos.x - 12, top: pos.y - 6 }]}
+            style={[styles.stone, { left: pos.x - 22, top: pos.y - 22 }]}
             hitSlop={12}
           >
             <View style={[styles.stoneInner, s.kind === "phase" && styles.stonePhase]} />
@@ -296,8 +299,8 @@ const styles = StyleSheet.create({
   canopy: { opacity: 0.95 },
   stone: {
     position: "absolute",
-    width: 24,
-    height: 12,
+    width: 44,
+    height: 44,
     alignItems: "center",
     justifyContent: "center",
   },
