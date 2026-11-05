@@ -93,3 +93,8 @@ frontend/.env
 .env
 .env.*
 *.env
+
+# Expo local state and Metro cache
+frontend/.expo/
+frontend/expo-env.d.ts
+frontend/.metro-cache/
