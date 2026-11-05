@@ -221,25 +221,36 @@ export function SanctuaryScene({
         <View style={[styles.cloudBlob, { width: 44, height: 12, marginLeft: -20 }]} />
       </Animated.View>
 
-      {/* Central tree — animated canopy sway */}
-      <View style={[styles.treeRoot, { left: width / 2 - 2, bottom: height * 0.22, height: treeH }]}>
-        <View style={styles.trunk} />
-      </View>
-      <Animated.View
-        pointerEvents="none"
-        style={[
-          styles.canopyWrap,
-          {
-            left: width / 2 - canopyR,
-            bottom: height * 0.22 + treeH - 10,
-            width: canopyR * 2,
-            height: canopyR * 2,
-            transform: [{ rotate }],
-          },
-        ]}
-      >
-        <View style={[styles.canopy, { width: canopyR * 2, height: canopyR * 2, backgroundColor: season.canopy, borderRadius: canopyR }]} />
-      </Animated.View>
+      {/* Lovable parity: a new sanctuary begins as a sapling, not a mature tree.
+          Growth remains tied to actual activity rather than invented milestones. */}
+      {activity <= 0 ? (
+        <View pointerEvents="none" style={[styles.saplingRoot, { left: width / 2 - 16, bottom: height * 0.22 }]}>
+          <View style={styles.saplingStem} />
+          <View style={[styles.saplingLeaf, styles.saplingLeafLeft, { backgroundColor: season.canopy }]} />
+          <View style={[styles.saplingLeaf, styles.saplingLeafRight, { backgroundColor: season.grass }]} />
+        </View>
+      ) : (
+        <>
+          <View style={[styles.treeRoot, { left: width / 2 - 2, bottom: height * 0.22, height: treeH }]}>
+            <View style={styles.trunk} />
+          </View>
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              styles.canopyWrap,
+              {
+                left: width / 2 - canopyR,
+                bottom: height * 0.22 + treeH - 10,
+                width: canopyR * 2,
+                height: canopyR * 2,
+                transform: [{ rotate }],
+              },
+            ]}
+          >
+            <View style={[styles.canopy, { width: canopyR * 2, height: canopyR * 2, backgroundColor: season.canopy, borderRadius: canopyR }]} />
+          </Animated.View>
+        </>
+      )}
 
       {/* Memory stones — tappable */}
       {visible.map((s, i) => {
@@ -274,6 +285,11 @@ const styles = StyleSheet.create({
   wrap: { borderRadius: 18, overflow: "hidden", position: "relative" },
   cloud: { position: "absolute", flexDirection: "row", alignItems: "center" },
   cloudBlob: { backgroundColor: "rgba(255,255,255,0.55)", borderRadius: 999 },
+  saplingRoot: { position: "absolute", width: 32, height: 36, alignItems: "center", justifyContent: "flex-end" },
+  saplingStem: { width: 3, height: 28, backgroundColor: "#5B4433", borderRadius: 2 },
+  saplingLeaf: { position: "absolute", width: 14, height: 8, borderRadius: 12 },
+  saplingLeafLeft: { left: 3, top: 9, transform: [{ rotate: "28deg" }] },
+  saplingLeafRight: { right: 3, top: 4, transform: [{ rotate: "-28deg" }] },
   treeRoot: { position: "absolute", width: 4 },
   trunk: { flex: 1, backgroundColor: "#5B4433", borderRadius: 2 },
   canopyWrap: { position: "absolute", alignItems: "center", justifyContent: "center" },
