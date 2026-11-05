@@ -11,7 +11,7 @@ export const colors = {
   surfaceTertiary: "#E9E4DD",    // Stone — raised cards
   onSurface: "#2E3130",          // Charcoal — primary text
   onSurfaceSecondary: "#5A5C58", // secondary text
-  onSurfaceTertiary: "#8A8C87",  // captions, meta
+  onSurfaceTertiary: "#626B63",  // captions, meta
   surfaceInverse: "#2E3130",
   onSurfaceInverse: "#F7F3ED",
 
