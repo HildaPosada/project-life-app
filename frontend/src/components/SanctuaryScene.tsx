@@ -214,6 +214,33 @@ export function SanctuaryScene({
         {/* Grass tint (season aware) */}
         <Rect x="0" y={0.83 * height} width={width} height={0.17 * height} fill={season.grass} opacity={0.35} />
 
+        {/* Quiet botanical layers inspired by the Lovable sanctuary: distant reeds and soft ground contours. */}
+        <Path
+          d={`M0 ${height * 0.86} Q ${width * 0.2} ${height * 0.825} ${width * 0.43} ${height * 0.86} T ${width} ${height * 0.84}`}
+          stroke={season.grass}
+          strokeWidth={2}
+          strokeOpacity={0.3}
+          fill="none"
+        />
+        <Path
+          d={`M0 ${height * 0.95} Q ${width * 0.3} ${height * 0.91} ${width * 0.58} ${height * 0.955} T ${width} ${height * 0.94}`}
+          stroke={p.hillNear}
+          strokeWidth={2}
+          strokeOpacity={0.18}
+          fill="none"
+        />
+        {[0.06, 0.11, 0.91, 0.96].map((fraction, index) => (
+          <Path
+            key={index}
+            d={`M ${width * fraction} ${height * 0.9} q -4 -7 -3 -15 M ${width * fraction} ${height * 0.9} q 4 -9 7 -12`}
+            stroke={season.canopy}
+            strokeWidth={1.5}
+            strokeOpacity={0.42}
+            strokeLinecap="round"
+            fill="none"
+          />
+        ))}
+
         {/* Meandering path */}
         <Path
           d={`M ${0.12 * width} ${0.86 * height} C ${0.30 * width} ${0.78 * height}, ${0.55 * width} ${0.90 * height}, ${0.88 * width} ${0.78 * height}`}
