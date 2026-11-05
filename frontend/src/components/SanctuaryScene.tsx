@@ -126,9 +126,20 @@ export function SanctuaryScene({
   const sway = useRef(new Animated.Value(0)).current;
   const drift = useRef(new Animated.Value(0)).current;
   const [reduceMotion, setReduceMotion] = React.useState(false);
+  useEffect(() => {
+    AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion).catch(() => {});
+    const listener = AccessibilityInfo.addEventListener("reduceMotionChanged", setReduceMotion);
+    return () => listener.remove();
+  }, []);
 
   useEffect(() => {
-    if (reduceMotion) return;
+    if (reduceMotion) {
+      sway.stopAnimation();
+      drift.stopAnimation();
+      sway.setValue(0);
+      drift.setValue(0);
+      return;
+    }
     Animated.loop(
       Animated.sequence([
         Animated.timing(sway, { toValue: 1, duration: 6000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
@@ -138,6 +149,7 @@ export function SanctuaryScene({
     Animated.loop(
       Animated.timing(drift, { toValue: 1, duration: 45000, easing: Easing.linear, useNativeDriver: true }),
     ).start();
+    return () => { sway.stopAnimation(); drift.stopAnimation(); };
   }, [sway, drift, reduceMotion]);
 
   const rotate = sway.interpolate({ inputRange: [0, 1], outputRange: ["-1.5deg", "1.5deg"] });
