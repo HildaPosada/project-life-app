@@ -99,6 +99,7 @@ export default function TodayScreen() {
   const context: Context | null = dash?.context ?? null;
   const affirmation = useMemo(() => contextualAffirmation(context, firstName), [context, firstName]);
   const seasonName = currentPhase?.title ?? "Groundwork";
+  const hasActivity = activityCount > 0 || stones.length > 0;
 
   const openStone = (s: Stone) => {
     router.push(`/memory/${s.stone_id}`);
@@ -158,7 +159,9 @@ export default function TodayScreen() {
             width={sanctuaryWidth}
             height={260}
           />
-          <Text style={styles.sanctuaryCaption}>{seasonName}</Text>
+          <Text style={styles.sanctuaryCaption}>
+            {hasActivity ? "Your sanctuary grows quietly with your writing and check-ins." : "Your sanctuary is waiting for your first page."}
+          </Text>
         </Animated.View>
 
         {/* 3. Three primary actions */}
@@ -249,7 +252,7 @@ const styles = StyleSheet.create({
   scroll: { paddingHorizontal: spacing.xl, paddingTop: spacing.xl, paddingBottom: spacing.xxxl },
 
   // Masthead
-  masthead: { marginBottom: spacing.xxl },
+  masthead: { marginBottom: spacing.xxl, paddingBottom: spacing.lg, borderBottomWidth: 1, borderBottomColor: colors.divider },
   eyebrow: { fontFamily: fonts.body, fontSize: fontSize.xs, color: colors.onSurfaceTertiary, letterSpacing: 2, textTransform: "uppercase" },
   greet: { fontFamily: fonts.serif, fontSize: 40, lineHeight: 46, color: colors.onSurface, fontWeight: "500", marginTop: spacing.md },
   affirm: { fontFamily: fonts.serif, fontSize: fontSize.xl, color: colors.brandPrimary, fontStyle: "italic", marginTop: spacing.md, lineHeight: 30 },
