@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef } from "react";
-import { Animated, Easing, View, Pressable, StyleSheet, Text, AccessibilityInfo } from "react-native";
+import { Animated, Easing, View, Pressable, StyleSheet, Text } from "react-native";
 import Svg, {
   Defs,
   LinearGradient as SvgLinearGradient,
@@ -10,6 +10,8 @@ import Svg, {
   Circle,
 } from "react-native-svg";
 import * as Haptics from "expo-haptics";
+
+import { useReduceMotion } from "@/src/hooks/use-reduce-motion";
 
 import { colors, fonts, fontSize } from "@/src/theme";
 
@@ -125,12 +127,7 @@ export function SanctuaryScene({
   // Animated values — only two, both very slow and non-alarming.
   const sway = useRef(new Animated.Value(0)).current;
   const drift = useRef(new Animated.Value(0)).current;
-  const [reduceMotion, setReduceMotion] = React.useState(false);
-  useEffect(() => {
-    AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion).catch(() => {});
-    const listener = AccessibilityInfo.addEventListener("reduceMotionChanged", setReduceMotion);
-    return () => listener.remove();
-  }, []);
+  const reduceMotion = useReduceMotion();
 
   useEffect(() => {
     if (reduceMotion) {

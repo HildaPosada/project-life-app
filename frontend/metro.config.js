@@ -5,6 +5,20 @@ const { FileStore } = require('metro-cache');
 
 const config = getDefaultConfig(__dirname);
 
+// The pinned Supabase client depends on ws, whose exports select Node's
+// stream implementation on native. Resolve only ws via its browser field;
+// React Native already provides the WebSocket used by Supabase at runtime.
+config.resolver.resolveRequest = (context, moduleName, platform) => {
+  if (moduleName === 'ws' && (platform === 'ios' || platform === 'android')) {
+    return context.resolveRequest(
+      { ...context, unstable_enablePackageExports: false },
+      moduleName,
+      platform,
+    );
+  }
+  return context.resolveRequest(context, moduleName, platform);
+};
+
 // Use a stable on-disk store (shared across web/android)
 const root = process.env.METRO_CACHE_ROOT || path.join(__dirname, '.metro-cache');
 config.cacheStores = [
