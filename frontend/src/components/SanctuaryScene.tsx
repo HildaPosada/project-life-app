@@ -140,16 +140,18 @@ export function SanctuaryScene({
       drift.setValue(0);
       return;
     }
-    Animated.loop(
+    const swayLoop = Animated.loop(
       Animated.sequence([
         Animated.timing(sway, { toValue: 1, duration: 6000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
         Animated.timing(sway, { toValue: 0, duration: 6000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
       ]),
-    ).start();
-    Animated.loop(
+    );
+    const driftLoop = Animated.loop(
       Animated.timing(drift, { toValue: 1, duration: 45000, easing: Easing.linear, useNativeDriver: true }),
-    ).start();
-    return () => { sway.stopAnimation(); drift.stopAnimation(); };
+    );
+    swayLoop.start();
+    driftLoop.start();
+    return () => { swayLoop.stop(); driftLoop.stop(); };
   }, [sway, drift, reduceMotion]);
 
   const rotate = sway.interpolate({ inputRange: [0, 1], outputRange: ["-1.5deg", "1.5deg"] });
